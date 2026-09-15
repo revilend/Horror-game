@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <title>Dark Asylum - 3D Horror</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <!-- Loading Screen -->
+  <div id="loading-screen">
+    <div class="loading-content">
+      <div class="loading-skull">💀</div>
+      <h1 class="loading-title">DARK ASYLUM</h1>
+      <div class="loading-bar-container">
+        <div class="loading-bar" id="loading-bar"></div>
+      </div>
+      <p class="loading-text" id="loading-text">Yuklanmoqda...</p>
+    </div>
+  </div>
+
+  <!-- Start Screen -->
+  <div id="start-screen" class="hidden">
+    <div class="start-content">
+      <h1 class="game-title">DARK ASYLUM</h1>
+      <p class="game-subtitle">Qochish uchun 3 ta kalit toping...</p>
+      <div class="start-story">
+        <p>Siz tashlab ketilgan ruhiy kasalxonada uyg'oqdingiz.</p>
+        <p>Eshiklar qulflangan. Qorong'u sizni o'rab olgan.</p>
+        <p>Bitta yo'l bor — oldinga.</p>
+      </div>
+      <div class="controls-info">
+        <div class="control-item">
+          <span class="control-icon">📱</span>
+          <span>Sensor: harakatlanish uchun surish, atrofga qarash uchun boshqa barmoq</span>
+        </div>
+      </div>
+      <button id="start-btn" class="glow-btn">O'YINNI BOSHLASH</button>
+    </div>
+  </div>
+
+  <!-- Game HUD -->
+  <div id="game-hud" class="hidden">
+    <div class="hud-top">
+      <div class="hud-keys">
+        <span class="key-icon" id="key-1">🔑</span>
+        <span class="key-icon" id="key-2">🔑</span>
+        <span class="key-icon" id="key-3">🔑</span>
+      </div>
+      <div class="hud-battery">
+        <div class="battery-bar" id="battery-bar"></div>
+        <span class="battery-text">🔦</span>
+      </div>
+    </div>
+    <div class="hud-crosshair">+</div>
+    <div class="hud-message" id="hud-message"></div>
+  </div>
+
+  <!-- Mobile Controls -->
+  <div id="mobile-controls" class="hidden">
+    <div class="joystick-area" id="joystick-area">
+      <div class="joystick-base" id="joystick-base">
+        <div class="joystick-stick" id="joystick-stick"></div>
+      </div>
+    </div>
+    <div class="mobile-buttons">
+      <button class="mobile-btn" id="flashlight-btn">🔦</button>
+      <button class="mobile-btn" id="run-btn">🏃</button>
+    </div>
+  </div>
+
+  <!-- Jumpscare Overlay -->
+  <div id="jumpscare-overlay" class="hidden">
+    <div class="jumpscare-face">👹</div>
+  </div>
+
+  <!-- Game Over Screen -->
+  <div id="gameover-screen" class="hidden">
+    <div class="gameover-content">
+      <h1 class="gameover-title" id="gameover-title">O'LDINGIZ</h1>
+      <p class="gameover-text" id="gameover-text">Qorong'u sizni egallab oldi...</p>
+      <button id="retry-btn" class="glow-btn">QAYTA O'YNASH</button>
+    </div>
+  </div>
+
+  <!-- Win Screen -->
+  <div id="win-screen" class="hidden">
+    <div class="win-content">
+      <h1 class="win-title">QOCHDINGIZ!</h1>
+      <p class="win-text">Siz Dark Asylum dan qochdingiz!</p>
+      <p class="win-time" id="win-time"></p>
+      <button id="replay-btn" class="glow-btn">YANA O'YNASH</button>
+    </div>
+  </div>
+
+  <canvas id="game-canvas"></canvas>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

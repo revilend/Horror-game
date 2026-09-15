@@ -1,0 +1,461 @@
+@import url('https://fonts.googleapis.com/css2?family=Creepster&family=Special+Elite&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: 'Special Elite', cursive;
+  color: #c8c8c8;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#game-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ===== LOADING SCREEN ===== */
+#loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-content {
+  text-align: center;
+}
+
+.loading-skull {
+  font-size: 80px;
+  animation: pulse 2s ease-in-out infinite, flicker 0.15s infinite;
+}
+
+.loading-title {
+  font-family: 'Creepster', cursive;
+  font-size: 48px;
+  color: #8b0000;
+  text-shadow: 0 0 20px #ff0000, 0 0 40px #8b0000;
+  margin: 20px 0;
+  letter-spacing: 8px;
+}
+
+.loading-bar-container {
+  width: 300px;
+  height: 4px;
+  background: #1a1a1a;
+  border-radius: 2px;
+  margin: 20px auto;
+  overflow: hidden;
+}
+
+.loading-bar {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #8b0000, #ff0000);
+  transition: width 0.3s;
+  box-shadow: 0 0 10px #ff0000;
+}
+
+.loading-text {
+  font-size: 14px;
+  color: #555;
+  letter-spacing: 2px;
+}
+
+/* ===== START SCREEN ===== */
+#start-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: radial-gradient(ellipse at center, #1a0000 0%, #000 70%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.start-content {
+  text-align: center;
+  padding: 20px;
+  max-width: 500px;
+}
+
+.game-title {
+  font-family: 'Creepster', cursive;
+  font-size: clamp(40px, 10vw, 72px);
+  color: #8b0000;
+  text-shadow: 0 0 30px #ff0000, 0 0 60px #8b0000, 0 0 90px #550000;
+  letter-spacing: 6px;
+  margin-bottom: 10px;
+  animation: flicker 3s infinite;
+}
+
+.game-subtitle {
+  font-size: 16px;
+  color: #666;
+  margin-bottom: 30px;
+  letter-spacing: 3px;
+}
+
+.start-story {
+  background: rgba(0,0,0,0.5);
+  border: 1px solid #330000;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 30px;
+}
+
+.start-story p {
+  font-size: 14px;
+  line-height: 2;
+  color: #888;
+}
+
+.controls-info {
+  margin-bottom: 30px;
+}
+
+.control-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+  font-size: 12px;
+  color: #555;
+}
+
+.control-icon {
+  font-size: 24px;
+}
+
+.glow-btn {
+  font-family: 'Creepster', cursive;
+  font-size: 24px;
+  color: #ff0000;
+  background: transparent;
+  border: 2px solid #8b0000;
+  padding: 15px 40px;
+  cursor: pointer;
+  letter-spacing: 4px;
+  transition: all 0.3s;
+  border-radius: 4px;
+  text-shadow: 0 0 10px #ff0000;
+}
+
+.glow-btn:hover,
+.glow-btn:active {
+  background: #8b0000;
+  color: #fff;
+  box-shadow: 0 0 30px #ff0000, 0 0 60px #8b0000;
+}
+
+/* ===== HUD ===== */
+#game-hud {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.hud-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 20px;
+}
+
+.hud-keys {
+  display: flex;
+  gap: 8px;
+}
+
+.key-icon {
+  font-size: 28px;
+  opacity: 0.2;
+  filter: grayscale(1);
+  transition: all 0.5s;
+}
+
+.key-icon.collected {
+  opacity: 1;
+  filter: grayscale(0) drop-shadow(0 0 8px gold);
+  animation: keyPulse 1s ease-in-out;
+}
+
+.hud-battery {
+  position: relative;
+  width: 60px;
+  height: 24px;
+  border: 2px solid #555;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.battery-bar {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #00ff00, #88ff00);
+  transition: width 0.5s;
+}
+
+.battery-bar.low {
+  background: linear-gradient(90deg, #ff0000, #ff8800);
+}
+
+.battery-text {
+  position: absolute;
+  right: -30px;
+  top: 2px;
+  font-size: 20px;
+}
+
+.hud-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.3);
+  font-weight: 100;
+  pointer-events: none;
+}
+
+.hud-message {
+  position: absolute;
+  bottom: 15%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 18px;
+  color: #ff4444;
+  text-shadow: 0 0 10px #ff0000;
+  opacity: 0;
+  transition: opacity 0.5s;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.hud-message.show {
+  opacity: 1;
+}
+
+/* ===== MOBILE CONTROLS ===== */
+#mobile-controls {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.joystick-area {
+  position: absolute;
+  bottom: 30px;
+  left: 30px;
+  width: 140px;
+  height: 140px;
+  pointer-events: all;
+}
+
+.joystick-base {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.joystick-stick {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  position: absolute;
+  transition: none;
+}
+
+.mobile-buttons {
+  position: absolute;
+  bottom: 40px;
+  right: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  pointer-events: all;
+}
+
+.mobile-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  font-size: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.mobile-btn:active {
+  background: rgba(255, 0, 0, 0.2);
+  border-color: rgba(255, 0, 0, 0.4);
+}
+
+/* ===== JUMPSCARE ===== */
+#jumpscare-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: jumpscareFlash 0.1s steps(1) infinite;
+}
+
+.jumpscare-face {
+  font-size: min(60vw, 300px);
+  animation: jumpscareShake 0.1s steps(2) infinite;
+}
+
+/* ===== GAME OVER ===== */
+#gameover-screen, #win-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 1s;
+}
+
+#gameover-screen {
+  background: radial-gradient(ellipse at center, #1a0000 0%, #000 70%);
+}
+
+#win-screen {
+  background: radial-gradient(ellipse at center, #001a00 0%, #000 70%);
+}
+
+.gameover-content, .win-content {
+  text-align: center;
+  padding: 20px;
+}
+
+.gameover-title {
+  font-family: 'Creepster', cursive;
+  font-size: 56px;
+  color: #8b0000;
+  text-shadow: 0 0 30px #ff0000;
+  margin-bottom: 20px;
+}
+
+.gameover-text {
+  font-size: 16px;
+  color: #666;
+  margin-bottom: 30px;
+}
+
+.win-title {
+  font-family: 'Creepster', cursive;
+  font-size: 56px;
+  color: #00aa00;
+  text-shadow: 0 0 30px #00ff00;
+  margin-bottom: 20px;
+}
+
+.win-text {
+  font-size: 16px;
+  color: #888;
+  margin-bottom: 10px;
+}
+
+.win-time {
+  font-size: 20px;
+  color: #00cc00;
+  margin-bottom: 30px;
+}
+
+/* ===== ANIMATIONS ===== */
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.3; }
+  94% { opacity: 1; }
+  96% { opacity: 0.5; }
+  97% { opacity: 1; }
+}
+
+@keyframes keyPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.5); }
+  100% { transform: scale(1); }
+}
+
+@keyframes jumpscareFlash {
+  0% { background: #000; }
+  50% { background: #1a0000; }
+}
+
+@keyframes jumpscareShake {
+  0% { transform: translate(-5px, -5px) rotate(-2deg); }
+  50% { transform: translate(5px, 5px) rotate(2deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .loading-title, .game-title {
+    font-size: clamp(32px, 8vw, 48px);
+  }
+  
+  .hud-top {
+    padding: 10px;
+  }
+  
+  .key-icon {
+    font-size: 22px;
+  }
+}
+
+@media (min-width: 769px) {
+  #mobile-controls {
+    display: none !important;
+  }
+}
