@@ -846,7 +846,7 @@ export function buildWorld(scene: THREE.Scene): MapInfo {
   const tubeMat = new THREE.MeshStandardMaterial({
     color: 0x101010,
     emissive: 0xfff2d2,
-    emissiveIntensity: 0.04,
+    emissiveIntensity: 0.12,
     roughness: 0.4,
   });
 

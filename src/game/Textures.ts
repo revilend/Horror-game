@@ -76,7 +76,9 @@ function toTexture(
 /** Peeling, water-stained asylum concrete. */
 export function createWallTexture(): THREE.CanvasTexture {
   const ctx = context2d();
-  ctx.fillStyle = '#3b3b3e';
+  // Sickly institutional green-tinged plaster: bright enough that the ambient
+  // term carries colour into the corridors instead of swallowing it.
+  ctx.fillStyle = '#5a5e56';
   ctx.fillRect(0, 0, SIZE, SIZE);
 
   blotches(ctx, 80, 'rgba(255,255,255,ALPHA)', 0.02, 0.07, 8, 52);

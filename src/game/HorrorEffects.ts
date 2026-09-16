@@ -58,8 +58,9 @@ export class HorrorEffects {
   constructor(scene: THREE.Scene) {
     this.scene = scene;
 
-    // Enough base light to see corridor shapes before power, but still eerie
-    this.ambientLight = new THREE.AmbientLight(0x2a3a50, 0.8);
+    // Institutional green-blue base: dim enough to stay eerie, but the colour
+    // carries so corridors read as a place, not a black box.
+    this.ambientLight = new THREE.AmbientLight(0x3d4a5c, 0.95);
 
     scene.fog = new THREE.FogExp2(0x0a0f16, this.fogDensity);
     scene.background = createSkyTexture();
@@ -149,9 +150,9 @@ export class HorrorEffects {
     flashlight.target.position.set(0, 0, -1);
     camera.add(flashlight.target);
 
-    // Soft personal glow: keeps floors and walls readable right around the
+    // brighter fill: keeps floors and walls readable right around the
     // player even when the flashlight is off or on its last bar of battery.
-    const fill = new THREE.PointLight(0xbfd0e8, 0.85, 9, 2);
+    const fill = new THREE.PointLight(0xc8d8ee, 1.15, 11, 1.8);
     camera.add(fill);
 
     this.flashlight = flashlight;
@@ -193,7 +194,9 @@ export class HorrorEffects {
     const blackedOut = performance.now() < this.blackoutUntil;
     const targetPower = this.powerOn && !blackedOut ? 1 : 0;
     this.powerLevel += (targetPower - this.powerLevel) * Math.min(1, dt * (blackedOut ? 3.5 : 0.55));
-    const lightScale = 0.35 + this.powerLevel * 0.65;
+    // Before power the tubes still throw a dim sickly glow - enough to walk
+    // by, never enough to feel safe.
+    const lightScale = 0.55 + this.powerLevel * 0.6;
 
     // --- Indoor vs. the grounds -------------------------------------------
     this.outdoorLevel += ((this.outdoors ? 1 : 0) - this.outdoorLevel) * Math.min(1, dt * 1.6);
@@ -213,7 +216,7 @@ export class HorrorEffects {
 
     // --- Flicker fluorescent tubes ---------------------------------------
     // Dark tubes still glow very faintly, which reads as moonlight through grime
-    const tubeBase = 0.08 + this.powerLevel * 1.1;
+    const tubeBase = 0.22 + this.powerLevel * 1.3;
     for (const material of this.fluorescents) {
       if (Math.random() < 0.012) {
         material.emissiveIntensity = tubeBase * 0.08;
@@ -226,7 +229,7 @@ export class HorrorEffects {
 
     // --- Fog: darkness, tension and danger all thicken it -----------------
     // Outside, the fog thins out and turns a wet blue-grey so the yard reads.
-    const indoorFog = 0.028 - this.powerLevel * 0.012 + tension * 0.008 + this.danger * 0.018;
+    const indoorFog = 0.024 - this.powerLevel * 0.01 + tension * 0.008 + this.danger * 0.018;
     const outdoorFog = 0.018 + this.danger * 0.015;
     const targetFog = indoorFog + (outdoorFog - indoorFog) * this.outdoorLevel;
     this.fogDensity += (targetFog - this.fogDensity) * dt * 0.7;
@@ -261,8 +264,8 @@ export class HorrorEffects {
     const strike = this.lightning > 0.55 ? this.lightning : this.lightning * 0.55;
 
     // Breathe a little light around the player so the dark is not flat black
-    const indoorAmbient = 0.72 + this.powerLevel * 0.28;
-    const outdoorAmbient = 0.85 + this.powerLevel * 0.1;
+    const indoorAmbient = 0.95 + this.powerLevel * 0.35;
+    const outdoorAmbient = 1.1 + this.powerLevel * 0.15;
     const ambientBase = indoorAmbient + (outdoorAmbient - indoorAmbient) * this.outdoorLevel;
     const breathe = Math.sin(performance.now() * 0.0007) * 0.03 + this.danger * 0.07;
     this.ambientLight.intensity =

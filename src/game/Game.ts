@@ -303,7 +303,7 @@ export class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.35;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.setLoadingProgress(20, 'Xonalar qurilmoqda...');
