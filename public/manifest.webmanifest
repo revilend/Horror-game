@@ -1,0 +1,37 @@
+{
+  "id": "dark-asylum",
+  "name": "Dark Asylum — Protokol 7",
+  "short_name": "Dark Asylum",
+  "description": "Tashlab ketilgan ruhiy kasalxonada qorong'u va yomg'ir ostida omon qolish uchun kurash. 7 qavat, 49 xona, 20 qayd va sizni ovlayotgan narsa.",
+  "lang": "uz",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#05060a",
+  "theme_color": "#05060a",
+  "categories": ["games", "entertainment"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
