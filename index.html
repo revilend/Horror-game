@@ -10,60 +10,127 @@
 </head>
 <body class="unbooted">
   <div id="loading-screen">
-    <div class="loading-skull">&#x1F480;</div>
-    <div class="loading-title">DARK ASYLUM</div>
-    <div class="loading-subtitle">PROTOKOL 7</div>
-    <div class="loading-bar-container"><div class="loading-bar" id="loading-bar"></div></div>
-    <div class="loading-text" id="loading-text">Yuklanmoqda...</div>
+    <div class="panel-stack">
+      <div class="loading-skull">&#x1F480;</div>
+      <div class="loading-title">DARK ASYLUM</div>
+      <div class="loading-subtitle">PROTOKOL 7</div>
+      <div class="loading-bar-container"><div class="loading-bar" id="loading-bar"></div></div>
+      <div class="loading-text" id="loading-text">Yuklanmoqda...</div>
+    </div>
   </div>
+
   <div id="start-screen" class="hidden">
-    <div class="menu-eyebrow">QO'RSINCHLI O'YIN</div>
-    <div class="menu-title">DARK ASYLUM</div>
-    <div class="menu-subtitle">PROTOKOL 7</div>
-    <div class="menu-story">Siz Doktor Elias Ren — Protokol 7 ni imzolagan oxirgi jarroh. 1987-yil 4-noyabrda bemorlar bir xonaga yopildi, kasalxona qulflandi va hech kim chiqmadi. Siz ertalab yolg'iz uyg'oldingiz, eshiklar bog'langan, va koridorlardagi tovushlar sizni tanigan ovozda chaqiryapti. U sizni eslaydi. U sizni kutmoqda. Uchta kalitni toping, saqlagichni ulang va darvozadan chiqib ketishdan oldin u sizni topmasin.</div>
-    <button id="start-btn" class="glow-btn">BOSHLASH</button>
-    <div class="settings-row"><label>Sezgirlilik</label><input type="range" class="setting-sensitivity" min="0.4" max="2.5" step="0.1" value="1" /></div>
-    <div class="settings-row"><label>Grafika</label><select class="setting-quality"><option value="low">Past</option><option value="medium">O'rta</option><option value="high" selected>Yuqori</option></select></div>
-    <div class="settings-row"><label>Ovoz</label><input type="checkbox" class="setting-muted" /></div>
-    <div class="menu-stats"><span>Eng yaxshi vaqt: <span id="best-time">—</span></span></div>
-    <div class="menu-controls">WASD — harakat · SHIFT — yugurish · E — olish/o'qish · C — egilish · F — chiroq · M — xarita</div>
+    <div class="panel-stack">
+      <div class="menu-eyebrow">QO'RSINCHLI O'YIN</div>
+      <div class="menu-title">DARK ASYLUM</div>
+      <div class="menu-subtitle">PROTOKOL 7</div>
+      <div class="start-story">
+        <p>Siz Doktor Elias Ren — Protokol 7 ni imzolagan oxirgi jarroh. 1987-yil 4-noyabrda bemorlar bir xonaga yopildi, kasalxona qulflandi va hech kim chiqmadi. Siz ertalab yolg'iz uyg'oldingiz, eshiklar bog'langan, va koridorlardagi tovushlar sizni tanigan ovozda chaqiryapti. U sizni eslaydi. U sizni kutmoqda. Uchta kalitni toping, saqlagichni ulang va darvozadan chiqib ketishdan oldin u sizni topmasin.</p>
+      </div>
+      <button id="start-btn" class="glow-btn">BOSHLASH</button>
+      <div class="menu-settings-block">
+        <div class="setting-row"><label>Sezgirlilik</label><input type="range" class="setting-sensitivity" min="0.4" max="2.5" step="0.1" value="1" /></div>
+        <div class="setting-row"><label>Grafika</label>
+          <select class="setting-quality">
+            <option value="low">Past</option>
+            <option value="medium">O'rta</option>
+            <option value="high" selected>Yuqori</option>
+          </select>
+        </div>
+        <div class="setting-row"><label>Ovoz</label><input type="checkbox" class="setting-muted" /></div>
+      </div>
+      <div class="menu-stats">
+        <div class="stat"><span class="stat-label">Eng yaxshi vaqt</span><span class="stat-value" id="best-time">—</span></div>
+      </div>
+      <div class="menu-controls">WASD — harakat · SHIFT — yugurish · E — olish · B — shisha otish · C — egilish · F — chiroq · M — xarita</div>
+    </div>
   </div>
+
   <canvas id="game-canvas"></canvas>
   <div id="vignette"></div>
   <div id="scanlines"></div>
   <div id="grain"></div>
+
   <div id="game-hud" class="hidden">
     <div class="hud-top">
-      <div class="hud-health"><div class="hud-label">SALomatlik</div><div class="bar-container"><div class="bar-fill bar-health" id="health-bar"></div></div></div>
-      <div class="hud-keys"><span id="key-1" class="key-icon">&#x1F511;</span><span id="key-2" class="key-icon">&#x1F511;</span><span id="key-3" class="key-icon">&#x1F511;</span></div>
+      <div class="hud-left">
+        <div class="hud-meter"><span class="hud-meter-icon">&#x1F576;</span><div class="meter"><div class="meter-fill meter-stamina" id="stamina-bar"></div></div></div>
+        <div class="hud-meter"><span class="hud-meter-icon">&#x1F526;</span><div class="meter"><div class="meter-fill meter-battery" id="battery-bar"></div></div></div>
+        <div class="hud-notes"><span class="hud-notes-icon">&#x1F4DD;</span><span id="note-count">0/20</span></div>
+      </div>
+      <div class="hud-center">
+        <div class="hud-objective" id="objective-text"></div>
+      </div>
+      <div class="hud-right">
+        <div class="hud-keys">
+          <span id="key-1" class="key-icon">&#x1F511;</span>
+          <span id="key-2" class="key-icon">&#x1F511;</span>
+          <span id="key-3" class="key-icon">&#x1F511;</span>
+        </div>
+        <button id="pause-btn" class="icon-btn" type="button">II</button>
+      </div>
     </div>
-    <div class="hud-bottom">
-      <div class="hud-battery"><div class="hud-label">Batareya</div><div class="bar-container"><div class="bar-fill bar-battery" id="battery-bar"></div></div></div>
-      <div class="hud-stamina"><div class="hud-label">Kuch</div><div class="bar-container"><div class="bar-fill bar-stamina" id="stamina-bar"></div></div></div>
-      <div class="hud-objective" id="objective-text"></div>
-      <div class="hud-notes"><span>&#x1F4DD;</span><span id="note-count">0/20</span></div>
-    </div>
-    <div class="hud-collected"><span id="card-icon" class="collected-icon">&#x1F4B3;</span><span id="power-icon" class="collected-icon">&#x26A1;</span></div>
     <div id="hud-message"></div>
-    <div id="note-toast"><div id="note-toast-title"></div><div id="note-toast-text"></div></div>
-    <div id="room-banner"><div id="room-banner-name"></div><div id="room-banner-subtitle"></div></div>
+    <div id="note-toast"><h4 id="note-toast-title"></h4><p id="note-toast-text"></p></div>
+    <div id="room-banner"><h3 id="room-banner-name"></h3><p id="room-banner-subtitle"></p></div>
+    <div class="hud-crosshair"></div>
   </div>
-  <div id="interact-prompt"><span id="interact-label"></span></div>
+
+  <div id="inventory"></div>
+
+  <div id="interact-prompt"><span class="interact-key">E</span><span id="interact-label"></span></div>
+
   <div id="crouch-vignette"></div>
   <div id="hidden-indicator">&#x1F44B; Yashiringan</div>
   <div id="danger-vignette"></div>
   <div id="damage-flash"></div>
   <div id="lightning-flash"></div>
+
   <div id="jumpscare-overlay" class="hidden"><div id="jumpscare-face"></div></div>
   <div id="stair-transition"><div id="stair-floor-name"></div></div>
-  <div id="pause-menu" class="hidden"><div class="panel-stack"><div class="menu-title">TO'XTATILDI</div><button id="resume-btn" class="glow-btn">DAVOM ETISH</button><button id="pause-restart-btn" class="ghost-btn">QAYTA BOSHLASH</button></div></div>
-  <div id="gameover-screen" class="hidden"><div class="panel-stack"><div class="menu-eyebrow">O'YIN TUGADI</div><div class="menu-title">QORONG'U</div><div id="gameover-text" class="menu-story"></div><div id="gameover-stats" class="menu-stats"></div><button id="retry-btn" class="glow-btn">QAYTA URINISH</button></div></div>
-  <div id="win-screen" class="hidden"><div class="panel-stack"><div class="menu-eyebrow">Qochdingiz</div><div class="menu-title">OZODLIK</div><div class="menu-story">Siz kasalxonadan chiqdingiz. Lekin u hali ham turibdi.</div><div id="win-time" class="menu-stats"></div><div id="win-stats" class="menu-stats"></div><button id="replay-btn" class="glow-btn">QAYTA O'YNASH</button></div></div>
-  <div id="mobile-controls" class="hidden">
-    <div class="joystick-zone"><div id="joystick-base"><div id="joystick-stick"></div></div></div>
-    <div class="mobile-buttons"><button id="hand-btn" class="mobile-btn">&#x1F590;</button><button id="crouch-btn" class="mobile-btn">&#x1F9CE;</button><button id="flashlight-btn" class="mobile-btn">&#x1F526;</button><button id="run-btn" class="mobile-btn">&#x1F3C3;</button><button id="throw-btn" class="mobile-btn">&#x1F37A;</button></div>
+
+  <div id="pause-menu" class="hidden">
+    <div class="panel-stack">
+      <div class="menu-title">TO'XTATILDI</div>
+      <button id="resume-btn" class="glow-btn">DAVOM ETISH</button>
+      <button id="pause-restart-btn" class="ghost-btn">QAYTA BOSHLASH</button>
+    </div>
   </div>
+
+  <div id="gameover-screen" class="hidden">
+    <div class="panel-stack">
+      <div class="menu-eyebrow">O'YIN TUGADI</div>
+      <div class="menu-title">QORONG'U</div>
+      <div id="gameover-text" class="menu-story"></div>
+      <div id="gameover-stats" class="menu-stats"></div>
+      <button id="retry-btn" class="glow-btn">QAYTA URINISH</button>
+    </div>
+  </div>
+
+  <div id="win-screen" class="hidden">
+    <div class="panel-stack">
+      <div class="menu-eyebrow">Qochdingiz</div>
+      <div class="menu-title">OZODLIK</div>
+      <div class="menu-story">Siz kasalxonadan chiqdingiz. Lekin u hali ham turibdi.</div>
+      <div id="win-time" class="menu-stats"></div>
+      <div id="win-stats" class="menu-stats"></div>
+      <button id="replay-btn" class="glow-btn">QAYTA O'YNASH</button>
+    </div>
+  </div>
+
+  <div id="mobile-controls" class="hidden">
+    <div class="joystick-area"><div id="joystick-base"><div id="joystick-stick"></div></div></div>
+    <div class="mobile-buttons">
+      <button id="hand-btn" class="mobile-btn" type="button">&#x1F590;</button>
+      <button id="throw-btn" class="mobile-btn" type="button">&#x1F37A;</button>
+      <button id="crouch-btn" class="mobile-btn" type="button">&#x1F9CE;</button>
+      <button id="flashlight-btn" class="mobile-btn" type="button">&#x1F526;</button>
+      <button id="run-btn" class="mobile-btn" type="button">&#x1F3C3;</button>
+    </div>
+  </div>
+
   <div id="minimap-panel"></div>
+
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

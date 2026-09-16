@@ -154,6 +154,52 @@ body {
   margin-bottom: 20px;
 }
 
+.menu-subtitle {
+  font-size: 13px;
+  letter-spacing: 6px;
+  color: #7d766c;
+  text-transform: uppercase;
+  margin: -14px 0 18px;
+}
+
+.loading-subtitle {
+  font-size: 12px;
+  letter-spacing: 6px;
+  color: #6a6258;
+  text-transform: uppercase;
+  margin: -8px 0 4px;
+}
+
+.menu-story {
+  font-size: 13px;
+  line-height: 1.85;
+  color: #948d82;
+  margin-bottom: 18px;
+}
+
+.menu-controls {
+  font-size: 10.5px;
+  letter-spacing: 1.6px;
+  color: #5e594f;
+  margin-top: 18px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 12px;
+}
+
+#start-screen .menu-stats {
+  justify-content: center;
+}
+
+#gameover-screen .menu-stats,
+#win-screen .menu-stats {
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: #978f82;
+  letter-spacing: 1px;
+  line-height: 1.7;
+}
+
 /* ===== LOADING ===== */
 #loading-screen {
   position: fixed;
@@ -1065,7 +1111,10 @@ body {
   bottom: 34px;
   right: 26px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 260px;
   gap: 14px;
   pointer-events: all;
 }
@@ -1480,6 +1529,10 @@ body {
   .mobile-buttons {
     bottom: 16px;
     right: 12px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 210px;
     gap: 10px;
   }
 
