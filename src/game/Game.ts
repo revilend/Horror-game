@@ -57,84 +57,84 @@ const BATTERY_RECOVER = 2.4;
 /** The story, told through eight notes scattered across the hospital. */
 const NOTES: Array<{ title: string; text: string }> = [
   {
-    title: '1987-yil, 4-noyabr',
-    text: 'Kasalxonaga 12 nafar bemor keltirildi. Hammasi bitta xonaga joylashtirildi. Bosh shifokor daftarga "Protokol 7" deb yozdi va hech kim savol bermadi.',
+    title: 'Kirish jurnali — Ren',
+    text: 'Mening ismim Doktor Elias Ren. Yigirma yil shu devorlar ichida jarrohlik qildim. Ular menga aytishdi: bu bemorlar boshqacha. Men ishonmadim. 1987-yil 4-noyabrda men Protokol 7 ni imzoladim va o\'sha imzo hali ham qonayapti.',
   },
   {
     title: 'Ro\'yxat',
-    text: 'Biz ularning ismlarini yozmadik. Faqat raqamlar: №29, №31, №37. Eng oxirgisi eng kattasi edi. Va eng jim.',
+    text: 'Biz ularning ismlarini yozmadik. Faqat raqamlar: №29, №31, №37. Eng oxirgisi eng kattasi edi. Va eng jim. U meni tanigan birinchi kishi edi — va oxirgisi bo\'lib qoldi.',
   },
   {
     title: 'Qorong\'ulik',
-    text: '№31 bir kechada sochlari oqarib ketdi. U qichqirmadi. Faqat "u eshikdan chiqadi" deb takrorladi. Biz uni zanjirlab qo\'ydik.',
+    text: '№31 bir kechada sochlari oqarib ketdi. U qichqirmadi. Faqat "u eshikdan chiqadi" deb takrorladi. Biz uni zanjirlab qo\'ydik. Men zanjirni men tanladim — bu men tanlagan oxirgi narsa edi.',
   },
   {
     title: 'Kuzatuv',
-    text: '№37 ni ushlab turish uchun to\'rt kishi kerak bo\'ldi. U bizga qaramadi. U doim devorga qaradi — go\'yo u orqasidan kelayotgan narsani ko\'rgan edi.',
+    text: '№37 ni ushlab turish uchun to\'rt kishi kerak bo\'ldi. U bizga qaramadi. U doim devorga qaradi — go\'yo u orqasidan kelayotgan narsani ko\'rgan edi. Bitta kechqurun u menga qaradi va "Ren, sen ham birimiz" dedi.',
   },
   {
     title: 'Rentgen',
-    text: 'Suratda uning suyaklari boshqacha edi. Men o\'sha plyonkani ko\'rganimdan keyin ikki kun uxlamadim. Uch kundan keyin kasalxonani yopishdi.',
+    text: 'Suratda uning suyaklari boshqacha edi. Men o\'sha plyonkani ko\'rganimdan keyin ikki kun uxlamadim. Uch kundan keyin kasalxonani yopishdi. Lekin yopish hech narsani tashqarida qoldirmadi.',
   },
   {
     title: 'Yoqish',
-    text: 'Bosh shifokor hujjatlarni yoqib yubordi. Men ham imzo chekdim. Hammasiga men imzo chekdim. Eshiklarni men qulfladim.',
+    text: 'Bosh shifokor hujjatlarni yoqib yubordi. Men ham imzo chekdim. Hammasiga men imzo chekdim. Eshiklarni men qulfladim. Va kalitni o\'zim cho\'ntamga qo\'ydim — go\'yo bu xavfsizlik edi.',
   },
   {
-    title: '4-noyabr',
-    text: 'O\'sha kecha hech kim chiqmadi. Faqat u chiqdi. Va u chiqqanida kasalxona jim bo\'lib qoldi.',
+    title: '4-noyabr, soat 23:47',
+    text: 'O\'sha kecha hech kim chiqmadi. Faqat u chiqdi. Va u chiqqanida kasalxona jim bo\'lib qoldi. Men eshitdim — koridorda yurgan ovoz meni tanigan ovoz edi. U mening ismimni bilardi.',
   },
   {
-    title: 'Oxirgi qayd',
-    text: 'Agar buni o\'qiyotgan bo\'lsangiz — men sizman. Va men hali ham bu yerdaman. Chiroqni yoqmang.',
+    title: 'Uyg\'onish',
+    text: 'Ertalab men o\'z xonamda uyg\'ondim. Deraza mixlangan. Telefon o\'lik. Ko\'zguda o\'zimni ko\'rdim — va bir soniya ko\'zguda meni ko\'rgan narsa men emas edim. Shu kundan boshlab bu yerdaman.',
   },
   {
     title: 'Qabriston',
-    text: 'Kasalxona o\'liklarini shu yerga ko\'mishardi. Toshda ism yo\'q — faqat raqam. Eng katta qabrda raqam ham yo\'q, chunki u hech qachon ko\'milgan emas.',
+    text: 'Kasalxona o\'liklarini shu yerga ko\'mishardi. Toshda ism yo\'q — faqat raqam. Eng katta qabrda raqam ham yo\'q, chunki u hech qachon ko\'milgan emas. Uning qabri bo\'sh. U hali yuryapti.',
   },
   {
     title: 'Krematoriy hisoboti',
-    text: 'Kul orasida suyak qolmaydi. Faqat tishlar qoladi. Va ularning hammasi — bir xil o\'lchamda. Hammasi bir odamniki.',
+    text: 'Kul orasida suyak qolmaydi. Faqat tishlar qoladi. Va ularning hammasi — bir xil o\'lchamda. Hammasi bir odamniki. Men o\'sha tishlarni sanadim. Yetmish ikkita. Bitta ko\'p.',
   },
   {
     title: 'Tez yordam daftari',
-    text: 'Men kasalxonaga qaytib kelmadim. Lekin mashina o\'zi qaytdi. Eshiklari ochiq, ichida hech kim yo\'q. Va u yomg\'ir ichida qaytdi.',
+    text: 'Men kasalxonaga qaytib kelmadim. Lekin mashina o\'zi qaytdi. Eshiklari ochiq, ichida hech kim yo\'q. Va u yomg\'ir ichida qaytdi. Haydovchi o\'rindig\'ida iliq edi.',
   },
   {
     title: 'Bosh shifokor xonasi',
-    text: 'Men Protokol 7 ni imzoladim. Eshikni qulfladim. Lekin men qulflagan eshik emas — men o\'zim qulflangan edim. Kalit hali ham cho\'ntamda.',
+    text: 'Men Protokol 7 ni imzoladim. Eshikni qulfladim. Lekin men qulflagan eshik emas — men o\'zim qulflangan edim. Kalit hali ham cho\'ntamda. Uni olib tashlashga kuchim yetmadi.',
   },
   {
     title: 'Kir yuvish xonasi',
-    text: 'Kiyimlar hali ham qurimagan. Ular bugun yuvilgan. Men kasalxonada yolg\'iz emasman — kimdir bu yerda hali ham ishlaydi.',
+    text: 'Kiyimlar hali ham qurimagan. Ular bugun yuvilgan. Men kasalxonada yolg\'iz emasman — kimdir bu yerda hali ham ishlaydi. Va u mening xalatimni kiygan.',
   },
   {
     title: 'Bolalar palatasi',
-    text: 'Yigirma to\'qqiz, o\'ttiz bir, o\'ttiz yetti. Ular raqam emas edi. Ular mening xatolarim edi, va ularning hammasi bir xil ovozda chaqirardi.',
+    text: 'Yigirma to\'qqiz, o\'ttiz bir, o\'ttiz yetti. Ular raqam emas edi. Ular mening xatolarim edi, va ularning hammasi bir xil ovozda chaqirardi. Ovoz menga qaragan edi — va ismimni aytdi.',
   },
   {
     title: 'Laboratoriya 7',
-    text: 'Namunalar shisha ichida qimirlaydi. Ular hali ham tirik. Ular meni taniydi — va ular meni kutishadi.',
+    text: 'Namunalar shisha ichida qimirlaydi. Ular hali ham tirik. Ular meni taniydi — va ular meni kutishadi. Men o\'sha shishalarni o\'zim to\'ldirgandim. Men o\'sha ignalarni o\'zim kiritgandim.',
   },
   {
     title: 'Qozonxona',
-    text: 'Qozonlar hali ham issiq. Kimdir o\'t yoqib turadi. Pastdan ovoz keladi — go\'yo kimdir zinapoyani ko\'tarib kelayotgandek.',
+    text: 'Qozonlar hali ham issiq. Kimdir o\'t yoqib turadi. Pastdan ovoz keladi — go\'yo kimdir zinapoyani ko\'tarib kelayotgandek. Va u qadam ovozi mening qadamlarim bilan bir xil.',
   },
   {
     title: 'O\'ttiz yettinchi tortma',
-    text: 'Morgniyning pastki qavatida o\'ttiz yetti tortma bor. O\'ttiz oltitasi band. Oxirgisi ochiq — va u mening o\'lchamimda. Men hech qachon bu yerdan chiqmaganman.',
+    text: 'Morgniyning pastki qavatida o\'ttiz yetti tortma bor. O\'ttiz oltitasi band. Oxirgisi ochiq — va u mening o\'lchamimda. Men hech qachon bu yerdan chiqmaganman. Men u yerdan hech qachon chiqmaganman.',
   },
   {
     title: 'Izolyator',
-    text: 'Uchinchi qavatdagi izolyatorda faqat bitta karavot bor va u devorga mahkamlangan. Ichkaridan tirnalgan izlar eshikning yarim bo\'yidan baland emas. Demak u bola edi. Yoki u emaklagan.',
+    text: 'Uchinchi qavatdagi izolyatorda faqat bitta karavot bor va u devorga mahkamlangan. Ichkaridan tirnalgan izlar eshikning yarim bo\'yidan baland emas. Demak u bola edi. Yoki u emaklagan. Yoki ikkalasi ham.',
   },
   {
     title: 'Elektroterapiya jurnali',
-    text: '№37 ga kuniga uch marta muolaja berildi. Muolaja ishlamadi — u faqat kuchaydi. Oxirgi sessiyada u kresloni uzib tashladi va qayishni o\'zi bilan olib ketdi.',
+    text: '№37 ga kuniga uch marta muolaja berildi. Muolaja ishlamadi — u faqat kuchaydi. Oxirgi sessiyada u kresloni uzib tashladi va qayishni o\'zi bilan olib ketdi. Muolajani men bergandim. Men o\'z qo\'lim bilan.',
   },
   {
     title: 'Tomdagi yozuv',
-    text: 'Tomga chiqish eshigi hech qachon qulflanmagan — bu yerdan chiqish mumkin edi. Faqat men qulfni ichkaridan sindirdim, chunki u tomdan ham pastga tushardi. Endi u men bilan birga shu binoda.',
+    text: 'Tomga chiqish eshigi hech qachon qulflanmagan — bu yerdan chiqish mumkin edi. Faqat men qulfni ichkaridan sindirdim, chunki u tomdan ham pastga tushardi. Endi u men bilan birga shu binoda. Va u chiqishni yopishni biladi.',
   },
 ];
 
@@ -576,6 +576,13 @@ export class Game {
       this.interact();
     });
 
+    // The thrown vial. Same instant-response contract as the hand button.
+    document.getElementById('throw-btn')?.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.throwBottle();
+    });
+
     // Crouch button uses pointerdown/pointerup so it does not stick
     const crouchButton = document.getElementById('crouch-btn');
     crouchButton?.addEventListener('pointerdown', (event) => {
@@ -594,6 +601,7 @@ export class Game {
     if (event.code === 'KeyF' && this.state === 'playing') this.toggleFlashlight();
     if (event.code === 'KeyM' && this.state === 'playing') this.minimap?.toggle();
     if (event.code === 'KeyE' && this.state === 'playing') this.interact();
+    if (event.code === 'KeyB' && this.state === 'playing') this.throwBottle();
     if (event.code === 'ShiftLeft' && this.state === 'playing') this.player?.setRunning(true);
     if ((event.code === 'ControlLeft' || event.code === 'ControlRight') && this.state === 'playing') this.player?.setCrouching(true);
       if (event.code === 'Escape') {
@@ -1165,8 +1173,116 @@ export class Game {
       this.showMessage("Batareya almashtirildi", 2000);
       return;
     }
+    if (id === 'bottle') {
+      this.throwBottle();
+      return;
+    }
     const def = ITEM_DEFS[id];
     this.showMessage(`${def.name}: ${def.hint}`, 2600);
+  }
+
+  /**
+   * Hurl a collected glass vial a few metres ahead. The smash pulls the
+   * creature to that spot, buying the player a corridor of distance.
+   */
+  private throwBottle(): void {
+    if (!this.player || !this.monster || !this.scene) return;
+    if (!this.inventory?.take('bottle')) return;
+
+    // Launch from the camera, in the direction the player is facing.
+    const origin = new THREE.Vector3();
+    this.camera?.getWorldPosition(origin);
+    const direction = new THREE.Vector3();
+    this.camera?.getWorldDirection(direction);
+
+    const vial = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0x9fd8c8, roughness: 0.15, transparent: true, opacity: 0.7 })
+    );
+    vial.position.copy(origin).addScaledVector(direction, 0.5);
+    this.scene.add(vial);
+
+    // Simple ballistic arc, resolved with raycast-free grid sampling.
+    const velocity = direction.clone().multiplyScalar(11);
+    velocity.y = 4.2;
+    let landed = false;
+    const step = 1 / 60;
+    const tick = (): void => {
+      if (landed) return;
+      velocity.y -= 14 * step;
+      vial.position.addScaledVector(velocity, step);
+      vial.rotation.x += 9 * step;
+      vial.rotation.z += 7 * step;
+
+      const floorY = 0.08;
+      const outOfBounds = vial.position.length() > 260;
+      if (vial.position.y <= floorY || outOfBounds) {
+        landed = true;
+        const impact = vial.position.clone();
+        this.scene?.remove(vial);
+        (vial.material as THREE.Material).dispose();
+        vial.geometry.dispose();
+
+        this.audio?.playGlassShatter();
+        this.spawnShardBurst(impact);
+        // The noise drags the creature off to look, even mid-chase.
+        this.monster?.goInvestigateAt(impact);
+        this.showMessage("Shisha sinadi \u2014 u ovozga qaradi", 2200);
+      } else {
+        requestAnimationFrame(tick);
+      }
+    };
+    requestAnimationFrame(tick);
+  }
+
+  /** A brief spray of bright glass shards where the vial hit. */
+  private spawnShardBurst(at: THREE.Vector3): void {
+    if (!this.scene) return;
+    const count = 14;
+    const positions = new Float32Array(count * 3);
+    const speeds: THREE.Vector3[] = [];
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = at.x;
+      positions[i * 3 + 1] = Math.max(0.05, at.y);
+      positions[i * 3 + 2] = at.z;
+      speeds.push(
+        new THREE.Vector3((Math.random() - 0.5) * 4, 2 + Math.random() * 3, (Math.random() - 0.5) * 4)
+      );
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.PointsMaterial({
+      color: 0xcfeee4,
+      size: 0.07,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+    });
+    const shards = new THREE.Points(geometry, material);
+    this.scene.add(shards);
+
+    let age = 0;
+    const step = 1 / 60;
+    const animate = (): void => {
+      age += step;
+      const attribute = shards.geometry.getAttribute('position') as THREE.BufferAttribute;
+      const array = attribute.array as Float32Array;
+      for (let i = 0; i < count; i++) {
+        speeds[i].y -= 12 * step;
+        array[i * 3] += speeds[i].x * step;
+        array[i * 3 + 1] = Math.max(0.03, array[i * 3 + 1] + speeds[i].y * step);
+        array[i * 3 + 2] += speeds[i].z * step;
+      }
+      attribute.needsUpdate = true;
+      material.opacity = Math.max(0, 0.95 - age * 1.1);
+      if (age < 1.1) requestAnimationFrame(animate);
+      else {
+        this.scene?.remove(shards);
+        geometry.dispose();
+        material.dispose();
+      }
+    };
+    requestAnimationFrame(animate);
   }
 
   private unlockExit(): void {
@@ -1686,12 +1802,12 @@ export class Game {
       if (hint) {
         hint.textContent =
           this.phase === 'power'
-            ? 'Qorong\'u sizni yutdi. Generator xonasidagi elektr sizni qutqarardi.'
+            ? 'Qorong\'u sizni yutdi. Saqlagichni o\'rnatganingizda yorug\'lik sizni qutqarardi. U bir vaqtlar sizning bemoringiz edi — endi u shifokor.'
             : this.phase === 'keys'
-              ? 'Kasalxona endi ko\'rinadi — va u ham sizni ko\'rdi.'
+              ? 'U sizni tanidi, Ren. U doim sizni tanigan edi. Kasalxona endi ko\'rinadi — va u ham sizni ko\'rdi.'
               : this.phase === 'escape'
-                ? 'Kalitlar cho\'ntangizda qoldi. Eshikgacha yetib bormadingiz.'
-                : 'Siz tashqariga chiqdingiz — lekin darvoza hali ham qulflangan edi.';
+                ? 'Kalitlar cho\'ntangizda qoldi. U eshikni yopishni biladi — u ko\'p yillardan beri shu erda eshiklarni yopadi.'
+                : 'Siz tashqariga chiqdingiz — lekin darvoza hali ham qulflangan edi. Podstansiyani yondirish kerak edi. U sizni yomg\'ir ostida kutdi.';
       }
 
       const stats = document.getElementById('gameover-stats');
@@ -1727,7 +1843,7 @@ export class Game {
     if (stats) {
       const ending =
         this.notesCollected >= TOTAL_NOTES
-          ? 'Siz hamma qaydni o\'qidingiz. Endi bilasiz: qulflagan ham, qochgan ham — bir xil odam edi.'
+          ? 'Endi hammasi ma\'lum: Protokol 7 ni imzolagan odam o\'zi imzo edi. Siz uni yaratdingiz, va u sizni eslab qoldi. Darvoza ochiq, yomg\'ir tugadi — lekin u hali ham devorlar ichida turibdi.'
           : `Siz ${TOTAL_NOTES - this.notesCollected} ta qaydni o'qimadingiz. Haqiqat shu devorlarda qoldi.`;
       stats.textContent =
         `${ending} · Qaydlar: ${this.notesCollected}/${TOTAL_NOTES}` +

@@ -7,7 +7,7 @@
  * gated on having the right object in hand.
  */
 
-export type ItemId = 'key' | 'card' | 'fuse' | 'crowbar' | 'battery';
+export type ItemId = 'key' | 'card' | 'fuse' | 'crowbar' | 'battery' | 'bottle' | 'acid' | 'ignition' | 'boltcutters' | 'uv';
 
 export interface ItemDef {
   name: string;
@@ -25,6 +25,11 @@ export const ITEM_DEFS: Record<ItemId, ItemDef> = {
   fuse: { name: 'Saqlagich', icon: '\u{1F50C}', hint: 'Generator shchoti uchun', usable: false, perSlot: 1 },
   crowbar: { name: 'Lom', icon: '\u{1F528}', hint: 'Tiqilib qolgan eshik uchun', usable: false, perSlot: 1 },
   battery: { name: 'Batareya', icon: '\u{1F50B}', hint: 'Fonarchani quvvatlaydi', usable: true, perSlot: 3 },
+  bottle: { name: 'Shisha', icon: '\u{1F37A}', hint: 'Ovoz chiqarish uchun otish mumkin', usable: true, perSlot: 5 },
+  acid: { name: 'Kislota', icon: '\u{2620}\u{FE0F}', hint: 'Metallni eritadi', usable: false, perSlot: 1 },
+  ignition: { name: 'Kalit (mashina)', icon: '\u{1F511}', hint: 'Tez yordam mashinasi uchun', usable: false, perSlot: 1 },
+  boltcutters: { name: 'Qaychi', icon: '\u{2702}\u{FE0F}', hint: 'Zanjirlarni kesish uchun', usable: false, perSlot: 1 },
+  uv: { name: 'UV chiroq', icon: '\u{1FA79}', hint: 'Yashirin yozuvlarni ochish', usable: false, perSlot: 1 },
 };
 
 export class Inventory {

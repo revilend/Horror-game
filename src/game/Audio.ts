@@ -272,6 +272,49 @@ export class HorrorAudio {
     source.start();
   }
 
+  /** Glass vial shattering on the floor - sharp, bright, very loud. */
+  playGlassShatter(): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+
+    // Burst of bright noise for the initial smash
+    const length = Math.floor(this.ctx.sampleRate * 0.35);
+    const buffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (length * 0.14));
+    }
+    const crash = this.ctx.createBufferSource();
+    crash.buffer = buffer;
+    const crashFilter = this.ctx.createBiquadFilter();
+    crashFilter.type = 'highpass';
+    crashFilter.frequency.value = 3000;
+    const crashGain = this.ctx.createGain();
+    crashGain.gain.value = 0.5;
+    crash.connect(crashFilter);
+    crashFilter.connect(crashGain);
+    crashGain.connect(this.masterGain);
+    crash.start(now);
+
+    // Ringing glass shards: a scatter of detuned high pings over half a second
+    for (let i = 0; i < 9; i++) {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = 2400 + Math.random() * 3600;
+      gain.gain.value = 0;
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      const t = now + Math.random() * 0.28;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.06 + Math.random() * 0.05, t + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.12 + Math.random() * 0.25);
+      osc.start(t);
+      osc.stop(t + 0.5);
+    }
+  }
+
   /** Rustling paper and a soft chime. */
   playNote(): void {
     if (!this.ctx || !this.masterGain) return;

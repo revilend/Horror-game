@@ -18,6 +18,7 @@ import {
   createOperatingTable,
   createShowerStall,
   createSink,
+  createVialMesh,
   createTrashBin,
   createWheelchairProp,
   createBookshelf,
@@ -291,6 +292,15 @@ const BATTERY_CELLS = [
   { row: 17, col: 13 }, // first corridor
   { row: 23, col: 15 }, // X-ray room
   { row: 37, col: 15 }, // children's ward, second floor
+];
+/** Empty glass vials lying around - throw them to lure the creature away. */
+const VIAL_CELLS = [
+  { row: 18, col: 21 }, // near the store room
+  { row: 20, col: 8 },  // second corridor
+  { row: 24, col: 11 }, // intensive therapy
+  { row: 17, col: 19 }, // X-ray anteroom
+  { row: 31, col: 9 },  // archive
+  { row: 7, col: 14 },  // courtyard, by the parking lot
 ];
 /**
  * The shower room's doorways are boarded shut until the crowbar turns up.
@@ -1238,6 +1248,13 @@ export function buildWorld(scene: THREE.Scene): MapInfo {
   for (const cell of BATTERY_CELLS) {
     spawnItem('battery', cell, createBatteryMesh(batteryMat, metalMat), 0.9);
   }
+  // Empty medicine vials: throw one to shatter it somewhere far away and the
+  // creature goes to investigate the noise instead of you.
+  VIAL_CELLS.forEach((cell, index) => {
+    const vial = createVialMesh(glassMat, metalMat);
+    vial.rotation.y = index * 1.3;
+    spawnItem('bottle', cell, vial, 0.9);
+  });
 
   // --- Boarded-up doorways ------------------------------------------------
   // Nailed planks across every way into the shower room. The meshes are kept

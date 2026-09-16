@@ -421,6 +421,28 @@ export function createCrowbarMesh(material: THREE.Material): THREE.Group {
   return group;
 }
 
+/**
+ * Empty glass medicine vial. Picked up off tables and trolleys, thrown to
+ * shatter somewhere far away so the creature goes looking there instead.
+ */
+export function createVialMesh(glass: THREE.Material, metal: THREE.Material): THREE.Group {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.17, 10), glass);
+  group.add(body);
+
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.035, 0.05, 8), glass);
+  neck.position.y = 0.11;
+  group.add(neck);
+
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.028, 8), metal);
+  cap.position.y = 0.145;
+  group.add(cap);
+
+  shadowAll(group);
+  return group;
+}
+
 /** Spare cell for the torch. */
 export function createBatteryMesh(body: THREE.Material, metal: THREE.Material): THREE.Group {
   const group = new THREE.Group();
