@@ -345,7 +345,9 @@ export class Game {
       antialias: false,
       powerPreference: 'high-performance',
     });
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    const vw = window.visualViewport?.width ?? window.innerWidth;
+    const vh = window.visualViewport?.height ?? window.innerHeight;
+    this.renderer.setSize(vw, vh, false);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -692,6 +694,8 @@ export class Game {
     window.addEventListener('orientationchange', () => {
       window.setTimeout(() => this.onResize(), 120);
     });
+    // Mobile Chrome shrinks the viewport when the URL bar shows/hides.
+    window.visualViewport?.addEventListener('resize', () => this.onResize());
 
     document.querySelectorAll<HTMLInputElement>('.setting-sensitivity').forEach((input) => {
       input.addEventListener('input', () => {
@@ -3010,9 +3014,13 @@ export class Game {
 
   private onResize(): void {
     if (!this.camera || !this.renderer) return;
-    this.camera.aspect = window.innerWidth / window.innerHeight;
+    // Use the visual viewport when available (mobile Chrome URL-bar show/hide)
+    // so the canvas fills the visible area rather than the larger layout viewport.
+    const vw = window.visualViewport?.width ?? window.innerWidth;
+    const vh = window.visualViewport?.height ?? window.innerHeight;
+    this.camera.aspect = vw / vh;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setSize(vw, vh, false);
     this.minimap?.relayout();
   }
 
