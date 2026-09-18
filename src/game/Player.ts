@@ -49,22 +49,35 @@ export class Player {
   private grid: number[][] = [];
   /** Circular obstacles (furniture) the player is pushed out of. */
   private colliders: Array<{ x: number; z: number; r: number }> = [];
+  /**
+   * Axis-aligned boxes nothing may pass. Shut doors live here, in the shape the
+   * game actually reasons about them, rather than being approximated by a
+   * circle the way furniture is.
+   */
+  private blockers: THREE.Box3[] = [];
 
   // Input state
   private keys: Set<string> = new Set();
   private joystickInput = { x: 0, y: 0 };
 
-  // Mobile look
-  private touchLookActive = false;
+  // Mobile dual-touch system
+  private mobileTouchReady = false;
+  private joystickTouchId: number | null = null;
+  private joystickCenterX = 0;
+  private joystickCenterY = 0;
+  private joystickKnob: HTMLElement | null = null;
+  private joystickKnobBase: HTMLElement | null = null;
+  /** The floating wrapper: it is what moves under the thumb. */
+  private joystickWrap: HTMLElement | null = null;
   private lookTouchId: number | null = null;
-  private lastTouchX = 0;
-  private lastTouchY = 0;
+  private lastLookX = 0;
+  private lastLookY = 0;
 
   // Input listeners must only ever be registered once
   private keyboardReady = false;
   private mouseLookReady = false;
-  private joystickReady = false;
-  private mobileLookReady = false;
+  /** When true, the player ignores all movement and look input. */
+  inputDisabled = false;
 
   constructor(camera: THREE.PerspectiveCamera) {
     this.camera = camera;
@@ -93,7 +106,9 @@ export class Player {
     this.isCrouched = false;
     this.currentHeight = EYE_HEIGHT;
     this.isMoving = false;
-    this.touchLookActive = false;
+    this.joystickTouchId = null;
+    this.joystickInput.x = 0;
+    this.joystickInput.y = 0;
     this.lookTouchId = null;
   }
 
@@ -104,6 +119,47 @@ export class Player {
   /** Furniture the player should not be able to walk through. */
   setColliders(colliders: Array<{ x: number; z: number; r: number }>): void {
     this.colliders = colliders;
+  }
+
+  /** Boxes that block movement outright - shut doors, and nothing else so far. */
+  setBlockers(blockers: THREE.Box3[]): void {
+    this.blockers = blockers;
+  }
+
+  /**
+   * Drops the player somewhere with no transition. Used by the cage elevator,
+   * which re-seats the cage under the player's feet mid-ride; the camera is
+   * synced here too so the move never shows up as a lag frame.
+   */
+  teleport(x: number, z: number): void {
+    this.position.x = x;
+    this.position.z = z;
+    this.velocity.set(0, 0, 0);
+    this.keys.clear();
+    this.applyCamera();
+  }
+
+  /**
+   * Parks the player somewhere and faces them a given way, camera included.
+   * Used when the player climbs into a locker: the view has to be pointing out
+   * of the vents on the very first frame, before update() ever runs again.
+   */
+  place(x: number, z: number, yaw: number): void {
+    this.teleport(x, z);
+    this.yaw = yaw;
+    this.pitch = 0;
+    this.applyCamera();
+  }
+
+  /** Points the camera along yaw/pitch. Safe to call while input is disabled. */
+  private applyCamera(): void {
+    this.camera.position.copy(this.position);
+    const lookTarget = new THREE.Vector3(
+      this.position.x - Math.sin(this.yaw) * Math.cos(this.pitch),
+      this.position.y + Math.sin(this.pitch),
+      this.position.z - Math.cos(this.yaw) * Math.cos(this.pitch)
+    );
+    this.camera.lookAt(lookTarget);
   }
 
   setupKeyboard(): void {
@@ -135,137 +191,132 @@ export class Player {
     this.mouseLookReady = true;
 
     document.addEventListener('mousemove', (e) => {
-      if (!document.pointerLockElement) return;
+      if (!document.pointerLockElement || this.inputDisabled) return;
       this.yaw -= e.movementX * LOOK_SPEED * this.lookSensitivity;
       this.pitch -= e.movementY * LOOK_SPEED * this.lookSensitivity;
       this.clampPitch();
     });
   }
 
-  setupMobileLook(canvas: HTMLCanvasElement): void {
-    if (this.mobileLookReady) return;
-    this.mobileLookReady = true;
+  /**
+   * Unified dual-touch system: left 50% = dynamic floating joystick,
+   * right 50% = camera look. Each touch is tracked by its identifier
+   * so the two hands NEVER interfere with each other.
+   */
+  setupMobileTouch(canvas: HTMLCanvasElement): void {
+    if (this.mobileTouchReady) return;
+    this.mobileTouchReady = true;
 
-    canvas.addEventListener(
-      'touchstart',
-      (e) => {
-        // Only right-side touches steer the camera; the left side is the joystick
-        for (let i = 0; i < e.changedTouches.length; i++) {
-          const touch = e.changedTouches[i];
-          if (touch.clientX > window.innerWidth * 0.32) {
-            this.touchLookActive = true;
-            this.lookTouchId = touch.identifier;
-            this.lastTouchX = touch.clientX;
-            this.lastTouchY = touch.clientY;
-            break;
+    // ── Create the dynamic joystick DOM (injected once) ──
+    const knobWrap = document.createElement('div');
+    knobWrap.id = 'dynamic-joystick';
+    knobWrap.innerHTML = '<div id="dj-base"></div><div id="dj-stick"></div>';
+    document.body.appendChild(knobWrap);
+    this.joystickWrap = knobWrap;
+    this.joystickKnobBase = knobWrap.querySelector('#dj-base');
+    this.joystickKnob = knobWrap.querySelector('#dj-stick');
+
+    const JOY_MAX = 50; // max knob displacement in px
+    const DEAD_ZONE = 8;
+    const HALF = 0.5; // screen split
+
+    // ── Stop the browser gesturing on the play area, and only there ──
+    // This must not be bound to `document`: a document-wide preventDefault
+    // cancels the compatibility click events, which is exactly what left the
+    // on-screen buttons dead. Scrolling and pinch-zoom are blocked in CSS
+    // (touch-action: none) instead, so the UI stays interactive.
+    const preventAll = (e: TouchEvent) => { e.preventDefault(); };
+    canvas.addEventListener('touchstart', preventAll, { passive: false });
+    canvas.addEventListener('touchmove', preventAll, { passive: false });
+    canvas.addEventListener('touchend', preventAll, { passive: false });
+    canvas.addEventListener('touchcancel', preventAll, { passive: false });
+
+    // ── Touch start ──
+    canvas.addEventListener('touchstart', (e: TouchEvent) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        const halfW = window.innerWidth * HALF;
+
+        if (this.inputDisabled) continue;
+
+        if (t.clientX < halfW && this.joystickTouchId === null) {
+          // LEFT HALF → the joystick appears wherever the thumb lands. The
+          // wrapper moves, not the base: positioning the base inside a fixed
+          // wrapper is what left a stray ring parked over the top-left HUD.
+          this.joystickTouchId = t.identifier;
+          this.joystickCenterX = t.clientX;
+          this.joystickCenterY = t.clientY;
+          if (this.joystickWrap) {
+            this.joystickWrap.style.left = `${t.clientX - 55}px`;
+            this.joystickWrap.style.top = `${t.clientY - 55}px`;
+            this.joystickWrap.style.opacity = '1';
           }
+          if (this.joystickKnob) this.joystickKnob.style.transform = 'translate(0,0)';
+        } else if (t.clientX >= halfW && this.lookTouchId === null) {
+          // RIGHT HALF → camera look
+          this.lookTouchId = t.identifier;
+          this.lastLookX = t.clientX;
+          this.lastLookY = t.clientY;
         }
-      },
-      { passive: true }
-    );
+      }
+    }, { passive: false });
 
-    canvas.addEventListener(
-      'touchmove',
-      (e) => {
-        if (!this.touchLookActive || this.lookTouchId === null) return;
-        for (let i = 0; i < e.touches.length; i++) {
-          const touch = e.touches[i];
-          // Follow the specific finger that started the look, not touches[0]
-          if (touch.identifier !== this.lookTouchId) continue;
+    // ── Touch move ──
+    canvas.addEventListener('touchmove', (e: TouchEvent) => {
+      if (this.inputDisabled) return;
 
-          const dx = touch.clientX - this.lastTouchX;
-          const dy = touch.clientY - this.lastTouchY;
+      for (let i = 0; i < e.touches.length; i++) {
+        const t = e.touches[i];
+
+        // Joystick movement (independent of camera)
+        if (t.identifier === this.joystickTouchId) {
+          let dx = t.clientX - this.joystickCenterX;
+          let dy = t.clientY - this.joystickCenterY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > JOY_MAX) {
+            dx = (dx / dist) * JOY_MAX;
+            dy = (dy / dist) * JOY_MAX;
+          }
+          if (this.joystickKnob) {
+            this.joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+          }
+          this.joystickInput.x = Math.abs(dx) < DEAD_ZONE ? 0 : dx / JOY_MAX;
+          this.joystickInput.y = Math.abs(dy) < DEAD_ZONE ? 0 : dy / JOY_MAX;
+        }
+
+        // Camera look (independent of joystick)
+        if (t.identifier === this.lookTouchId) {
+          const dx = t.clientX - this.lastLookX;
+          const dy = t.clientY - this.lastLookY;
           this.yaw -= dx * LOOK_SPEED * 2 * this.lookSensitivity;
           this.pitch -= dy * LOOK_SPEED * 2 * this.lookSensitivity;
           this.clampPitch();
-          this.lastTouchX = touch.clientX;
-          this.lastTouchY = touch.clientY;
-          break;
-        }
-      },
-      { passive: true }
-    );
-
-    const endLook = (e: TouchEvent) => {
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        if (e.changedTouches[i].identifier === this.lookTouchId) {
-          this.touchLookActive = false;
-          this.lookTouchId = null;
-          break;
+          this.lastLookX = t.clientX;
+          this.lastLookY = t.clientY;
         }
       }
-    };
-    canvas.addEventListener('touchend', endLook, { passive: true });
-    canvas.addEventListener('touchcancel', endLook, { passive: true });
-  }
+    }, { passive: false });
 
-  setupJoystick(): void {
-    if (this.joystickReady) return;
-    this.joystickReady = true;
-
-    const base = document.getElementById('joystick-base');
-    const stick = document.getElementById('joystick-stick');
-    if (!base || !stick) return;
-
-    let activeTouchId: number | null = null;
-    let centerX = 0;
-    let centerY = 0;
-    const maxDist = 38;
-
-    const reset = () => {
-      activeTouchId = null;
-      stick.style.transform = 'translate(0, 0)';
-      this.joystickInput.x = 0;
-      this.joystickInput.y = 0;
-    };
-
-    const handleStart = (e: TouchEvent) => {
-      if (activeTouchId !== null) return;
-      e.preventDefault();
-      const touch = e.changedTouches[0];
-      activeTouchId = touch.identifier;
-      const rect = base.getBoundingClientRect();
-      centerX = rect.left + rect.width / 2;
-      centerY = rect.top + rect.height / 2;
-    };
-
-    const handleMove = (e: TouchEvent) => {
-      if (activeTouchId === null) return;
-      for (let i = 0; i < e.touches.length; i++) {
-        const touch = e.touches[i];
-        if (touch.identifier !== activeTouchId) continue;
-        e.preventDefault();
-
-        let dx = touch.clientX - centerX;
-        let dy = touch.clientY - centerY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > maxDist) {
-          dx = (dx / dist) * maxDist;
-          dy = (dy / dist) * maxDist;
-        }
-        stick.style.transform = `translate(${dx}px, ${dy}px)`;
-
-        // Dead zone so a resting thumb does not creep the player forward
-        this.joystickInput.x = Math.abs(dx) < 6 ? 0 : dx / maxDist;
-        this.joystickInput.y = Math.abs(dy) < 6 ? 0 : dy / maxDist;
-        break;
-      }
-    };
-
+    // ── Touch end / cancel ──
     const handleEnd = (e: TouchEvent) => {
-      if (activeTouchId === null) return;
       for (let i = 0; i < e.changedTouches.length; i++) {
-        if (e.changedTouches[i].identifier === activeTouchId) {
-          reset();
-          break;
+        const ct = e.changedTouches[i];
+        if (ct.identifier === this.joystickTouchId) {
+          this.joystickTouchId = null;
+          this.joystickInput.x = 0;
+          this.joystickInput.y = 0;
+          if (this.joystickKnob) this.joystickKnob.style.transform = 'translate(0,0)';
+          // Floating joystick: it leaves with the thumb, so it never covers
+          // the corridor while the player is looking around.
+          if (this.joystickWrap) this.joystickWrap.style.opacity = '0';
+        }
+        if (ct.identifier === this.lookTouchId) {
+          this.lookTouchId = null;
         }
       }
     };
-
-    base.addEventListener('touchstart', handleStart, { passive: false });
-    document.addEventListener('touchmove', handleMove, { passive: false });
-    document.addEventListener('touchend', handleEnd, { passive: true });
-    document.addEventListener('touchcancel', handleEnd, { passive: true });
+    canvas.addEventListener('touchend', handleEnd, { passive: false });
+    canvas.addEventListener('touchcancel', handleEnd, { passive: false });
   }
 
   setRunning(running: boolean): void {
@@ -298,6 +349,7 @@ export class Player {
   }
 
   update(dt: number): void {
+    if (this.inputDisabled) return;
     const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
@@ -364,6 +416,9 @@ export class Player {
     // --- Furniture collision ---------------------------------------------
     this.resolveColliders();
 
+    // --- Solid boxes: shut doors ------------------------------------------
+    this.resolveBlockers();
+
     // --- Crouch height transition ----------------------------------------
     const targetHeight = this.isCrouched ? CROUCH_HEIGHT : EYE_HEIGHT;
     this.currentHeight += (targetHeight - this.currentHeight) * Math.min(1, dt * CROUCH_LERP);
@@ -391,14 +446,50 @@ export class Player {
     }
 
     // --- Camera -----------------------------------------------------------
-    this.camera.position.copy(this.position);
-    const lookTarget = new THREE.Vector3(
-      this.position.x - Math.sin(this.yaw) * Math.cos(this.pitch),
-      this.position.y + Math.sin(this.pitch),
-      this.position.z - Math.cos(this.yaw) * Math.cos(this.pitch)
-    );
-    this.camera.lookAt(lookTarget);
+    this.applyCamera();
     this.camera.rotation.z += roll;
+  }
+
+  /**
+   * Push the player out of any blocker box they have ended up inside.
+   *
+   * Only the x/z footprint matters - the player has no vertical physics - so
+   * each box is treated as a rectangle and the player is ejected along its
+   * shallowest axis. That is what stops a shut door from being walked through
+   * while still letting the player slide along the wall beside it.
+   */
+  private resolveBlockers(): void {
+    for (const box of this.blockers) {
+      const minX = box.min.x - PLAYER_RADIUS;
+      const maxX = box.max.x + PLAYER_RADIUS;
+      const minZ = box.min.z - PLAYER_RADIUS;
+      const maxZ = box.max.z + PLAYER_RADIUS;
+
+      const { x, z } = this.position;
+      if (x <= minX || x >= maxX || z <= minZ || z >= maxZ) continue;
+
+      // Distance to each face; the nearest one is the cheapest way out.
+      const toWest = x - minX;
+      const toEast = maxX - x;
+      const toNorth = z - minZ;
+      const toSouth = maxZ - z;
+      const least = Math.min(toWest, toEast, toNorth, toSouth);
+
+      let nextX = x;
+      let nextZ = z;
+      if (least === toWest) nextX = minX;
+      else if (least === toEast) nextX = maxX;
+      else if (least === toNorth) nextZ = minZ;
+      else nextZ = maxZ;
+
+      // Never accept a push that would put the player inside real geometry.
+      if (isWalkable(this.grid, nextX, z)) this.position.x = nextX;
+      else if (isWalkable(this.grid, x, nextZ)) this.position.z = nextZ;
+      else if (isWalkable(this.grid, nextX, nextZ)) {
+        this.position.x = nextX;
+        this.position.z = nextZ;
+      }
+    }
   }
 
   /**

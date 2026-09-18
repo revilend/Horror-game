@@ -1,67 +1,83 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="uz">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <meta name="theme-color" content="#05060a" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Special+Elite&display=swap" rel="stylesheet" />
   <title>Dark Asylum — Protokol 7</title>
   <link rel="icon" href="./favicon.png" />
   <link rel="manifest" href="./manifest.webmanifest" />
-  <script type="module" crossorigin src="./assets/index-MIbBGGvx.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-4_9eX1hf.css">
+  <script type="module" crossorigin src="./assets/index-CpkPfyEg.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-Dn8WIDjR.css">
 </head>
 <body class="unbooted">
   <div id="loading-screen">
     <div class="panel-stack">
       <div class="loading-skull">&#x1F480;</div>
       <div class="loading-title">DARK ASYLUM</div>
-      <div class="loading-subtitle">PROTOKOL 7</div>
+      <div class="loading-subtitle" data-i18n="loading.subtitle">PROTOKOL 7</div>
       <div class="loading-bar-container"><div class="loading-bar" id="loading-bar"></div></div>
-      <div class="loading-text" id="loading-text">Yuklanmoqda...</div>
+      <div class="loading-text" id="loading-text" data-i18n="loading.text">Yuklanmoqda...</div>
     </div>
   </div>
 
   <div id="start-screen" class="hidden">
     <div class="panel-stack">
-      <div class="menu-eyebrow">QO'RSINCHLI O'YIN</div>
+      <div class="menu-eyebrow" data-i18n="menu.eyebrow">QO'RSINCHLI O'YIN</div>
       <div class="menu-title">DARK ASYLUM</div>
-      <div class="menu-subtitle">PROTOKOL 7</div>
+      <div class="menu-subtitle" data-i18n="loading.subtitle">PROTOKOL 7</div>
       <div class="start-story">
-        <p>Siz Doktor Elias Ren — Protokol 7 ni imzolagan oxirgi jarroh. 1987-yil 4-noyabrda bemorlar bir xonaga yopildi, kasalxona qulflandi va hech kim chiqmadi. Siz ertalab yolg'iz uyg'oldingiz, eshiklar bog'langan, va koridorlardagi tovushlar sizni tanigan ovozda chaqiryapti. U sizni eslaydi. U sizni kutmoqda. Uchta kalitni toping, saqlagichni ulang va darvozadan chiqib ketishdan oldin u sizni topmasin.</p>
+        <p data-i18n="menu.story"></p>
       </div>
-      <button id="start-btn" class="glow-btn">BOSHLASH</button>
+      <button id="start-btn" class="glow-btn" data-i18n="menu.start">BOSHLASH</button>
       <div class="menu-settings-block">
-        <div class="setting-row"><label>Sezgirlilik</label><input type="range" class="setting-sensitivity" min="0.4" max="2.5" step="0.1" value="1" /></div>
-        <div class="setting-row"><label>Grafika</label>
+        <div class="setting-row"><label data-i18n="menu.sensitivity">Sezgirlilik</label><input type="range" class="setting-sensitivity" min="0.4" max="2.5" step="0.1" value="1" /></div>
+        <div class="setting-row"><label data-i18n="menu.graphics">Grafika</label>
           <select class="setting-quality">
-            <option value="low">Past</option>
-            <option value="medium">O'rta</option>
-            <option value="high" selected>Yuqori</option>
+            <option value="low" data-i18n="menu.quality.low">Past</option>
+            <option value="medium" data-i18n="menu.quality.medium">O'rta</option>
+            <option value="high" selected data-i18n="menu.quality.high">Yuqori</option>
           </select>
         </div>
-        <div class="setting-row"><label>Ovoz</label><input type="checkbox" class="setting-muted" /></div>
+        <div class="setting-row"><label data-i18n="menu.sound">Ovoz</label><input type="checkbox" class="setting-muted" /></div>
+        <div class="setting-row"><label data-i18n="menu.language">Til</label>
+          <div class="lang-picker" data-lang-picker>
+            <button type="button" class="lang-btn" data-lang="uz">UZ</button>
+            <button type="button" class="lang-btn" data-lang="en">EN</button>
+            <button type="button" class="lang-btn" data-lang="ru">RU</button>
+          </div>
+        </div>
       </div>
       <div class="menu-stats">
-        <div class="stat"><span class="stat-label">Eng yaxshi vaqt</span><span class="stat-value" id="best-time">—</span></div>
+        <div class="stat"><span class="stat-label" data-i18n="menu.bestTime">Eng yaxshi vaqt</span><span class="stat-value" id="best-time">—</span></div>
       </div>
-      <div class="menu-controls">WASD — harakat · SHIFT — yugurish · E — olish · B — shisha otish · C — egilish · F — chiroq · M — xarita</div>
+      <div class="menu-controls" data-i18n="menu.controls"></div>
+      <div class="menu-controls touch-only" data-i18n="menu.controlsTouch"></div>
     </div>
   </div>
 
   <canvas id="game-canvas"></canvas>
   <div id="vignette"></div>
   <div id="scanlines"></div>
+  <div id="vhs-tracking"></div>
   <div id="grain"></div>
 
   <div id="game-hud" class="hidden">
     <div class="hud-top">
       <div class="hud-left">
-        <div class="hud-meter"><span class="hud-meter-icon">&#x1F576;</span><div class="meter"><div class="meter-fill meter-stamina" id="stamina-bar"></div></div></div>
-        <div class="hud-meter"><span class="hud-meter-icon">&#x1F526;</span><div class="meter"><div class="meter-fill meter-battery" id="battery-bar"></div></div></div>
+        <div class="hud-meter" data-i18n-title="hud.stamina"><span class="hud-meter-icon">&#x1F576;</span><div class="meter"><div class="meter-fill meter-stamina" id="stamina-bar"></div></div></div>
+        <div class="hud-meter" data-i18n-title="hud.battery"><span class="hud-meter-icon">&#x1F526;</span><div class="meter"><div class="meter-fill meter-battery" id="battery-bar"></div></div></div>
         <div class="hud-notes"><span class="hud-notes-icon">&#x1F4DD;</span><span id="note-count">0/20</span></div>
       </div>
       <div class="hud-center">
         <div class="hud-objective" id="objective-text"></div>
+        <div id="lift-location" class="lift-location">
+          <span class="lift-location-label" data-i18n="lift.location">JOYLASHUV</span>
+          <span id="lift-location-text"></span>
+        </div>
       </div>
       <div class="hud-right">
         <div class="hud-keys">
@@ -69,12 +85,12 @@
           <span id="key-2" class="key-icon">&#x1F511;</span>
           <span id="key-3" class="key-icon">&#x1F511;</span>
         </div>
-        <button id="pause-btn" class="icon-btn" type="button">II</button>
+        <button id="pause-btn" class="icon-btn" type="button" data-i18n-title="hud.pause">II</button>
       </div>
     </div>
-    <div id="hud-message"></div>
-    <div id="note-toast"><h4 id="note-toast-title"></h4><p id="note-toast-text"></p></div>
-    <div id="room-banner"><h3 id="room-banner-name"></h3><p id="room-banner-subtitle"></p></div>
+    <div id="hud-message" class="hud-message"></div>
+    <div id="note-toast" class="note-toast"><h4 id="note-toast-title"></h4><p id="note-toast-text"></p></div>
+    <div id="room-banner" class="room-banner"><h3 id="room-banner-name"></h3><p id="room-banner-subtitle"></p></div>
     <div class="hud-crosshair"></div>
   </div>
 
@@ -82,46 +98,84 @@
 
   <div id="interact-prompt"><span class="interact-key">E</span><span id="interact-label"></span></div>
 
+  <!-- Doors, drawers and lockers. Kept separate from the hand prompt above so
+       the two can never fight over a single press. Tappable on touch. -->
+  <div id="fixture-prompt">
+    <span class="fixture-key">F</span>
+    <span id="fixture-label"></span>
+  </div>
+
+  <!-- Framing shown while the player is shut inside a locker -->
+  <div id="locker-view">
+    <div class="locker-vent top"></div>
+    <div class="locker-vent bottom"></div>
+  </div>
+
   <div id="crouch-vignette"></div>
-  <div id="hidden-indicator">&#x1F44B; Yashiringan</div>
+  <div id="hidden-indicator"><span data-i18n="hud.hidden">Yashiringan</span></div>
   <div id="danger-vignette"></div>
   <div id="damage-flash"></div>
   <div id="lightning-flash"></div>
 
-  <div id="jumpscare-overlay" class="hidden"><div id="jumpscare-face"></div></div>
-  <div id="stair-transition"><div id="stair-floor-name"></div></div>
+  <!-- Cinematic intro overlays -->
+  <div id="intro-eyelid" class="hidden">
+    <div class="eyelid-top"></div>
+    <div class="eyelid-bottom"></div>
+  </div>
+  <div id="intro-typewriter" class="hidden">
+    <div class="typewriter-inner">
+      <span class="typewriter-label"></span>
+      <span class="typewriter-text"></span>
+    </div>
+  </div>
+  <button id="skip-intro" class="hidden" type="button" data-i18n="intro.skip">SKIP INTRO ▸▸</button>
+
+  <div id="jumpscare-overlay" class="hidden"><div id="jumpscare-face" class="jumpscare-face"></div></div>
+  <div id="stair-transition"><div id="stair-floor-name" class="stair-floor-name"></div></div>
 
   <div id="pause-menu" class="hidden">
     <div class="panel-stack">
-      <div class="menu-title">TO'XTATILDI</div>
-      <button id="resume-btn" class="glow-btn">DAVOM ETISH</button>
-      <button id="pause-restart-btn" class="ghost-btn">QAYTA BOSHLASH</button>
+      <div class="menu-title" data-i18n="hud.paused">TO'XTATILDI</div>
+      <button id="resume-btn" class="glow-btn" data-i18n="hud.resume">DAVOM ETISH</button>
+      <button id="pause-restart-btn" class="ghost-btn" data-i18n="hud.restart">QAYTA BOSHLASH</button>
+      <div class="lang-picker" data-lang-picker>
+        <button type="button" class="lang-btn" data-lang="uz">UZ</button>
+        <button type="button" class="lang-btn" data-lang="en">EN</button>
+        <button type="button" class="lang-btn" data-lang="ru">RU</button>
+      </div>
     </div>
   </div>
 
   <div id="gameover-screen" class="hidden">
     <div class="panel-stack">
-      <div class="menu-eyebrow">O'YIN TUGADI</div>
-      <div class="menu-title">QORONG'U</div>
-      <div id="gameover-text" class="menu-story"></div>
+      <div class="menu-eyebrow" data-i18n="over.eyebrow">O'YIN TUGADI</div>
+      <div class="menu-title" data-i18n="over.title">QORONG'U</div>
+      <div id="gameover-text" class="menu-story gameover-text"></div>
       <div id="gameover-stats" class="menu-stats"></div>
-      <button id="retry-btn" class="glow-btn">QAYTA URINISH</button>
+      <button id="retry-btn" class="glow-btn" data-i18n="over.retry">QAYTA URINISH</button>
     </div>
   </div>
 
   <div id="win-screen" class="hidden">
     <div class="panel-stack">
-      <div class="menu-eyebrow">Qochdingiz</div>
-      <div class="menu-title">OZODLIK</div>
-      <div class="menu-story">Siz kasalxonadan chiqdingiz. Lekin u hali ham turibdi.</div>
-      <div id="win-time" class="menu-stats"></div>
+      <div class="menu-eyebrow" data-i18n="win.eyebrow">Qochdingiz</div>
+      <div class="menu-title" data-i18n="win.title">OZODLIK</div>
+      <div class="menu-story" data-i18n="win.story"></div>
+      <div id="win-time" class="menu-stats win-time"></div>
       <div id="win-stats" class="menu-stats"></div>
-      <button id="replay-btn" class="glow-btn">QAYTA O'YNASH</button>
+      <button id="replay-btn" class="glow-btn" data-i18n="win.replay">QAYTA O'YNASH</button>
     </div>
   </div>
 
+  <!-- Vintage lift panel: only raised while the player is inside the cage -->
+  <div id="lift-panel" class="lift-panel">
+    <div class="lift-panel-head">
+      <span class="lift-panel-title" data-i18n="lift.title">LIFT PANELI</span>
+    </div>
+    <div class="lift-floors" id="lift-floors"></div>
+  </div>
+
   <div id="mobile-controls" class="hidden">
-    <div class="joystick-area"><div id="joystick-base"><div id="joystick-stick"></div></div></div>
     <div class="mobile-buttons">
       <button id="hand-btn" class="mobile-btn" type="button">&#x1F590;</button>
       <button id="throw-btn" class="mobile-btn" type="button">&#x1F37A;</button>
@@ -132,6 +186,13 @@
   </div>
 
   <div id="minimap-panel"></div>
+
+  <!-- Landscape-only guard for phones turned the wrong way -->
+  <div id="rotate-overlay" class="hidden">
+    <div class="rotate-icon">&#x1F4F1;</div>
+    <h2 data-i18n="rotate.title">GORIZONTAL HOLATGA O'GIRING</h2>
+    <p data-i18n="rotate.text"></p>
+  </div>
 
 </body>
 </html>

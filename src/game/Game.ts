@@ -1,12 +1,49 @@
 import * as THREE from 'three';
-import { buildWorld, CELL, isOutdoor, MapInfo, OUTDOOR_ROWS, RoomInfo, roomIndexAt, STAIR_CELLS, floorAt, floorName } from './World';
+import {
+  buildWorld,
+  CELL,
+  EYE_HEIGHT,
+  isOutdoor,
+  MapInfo,
+  OUTDOOR_ROWS,
+  relocalizeWallTexts,
+  RoomInfo,
+  roomIndexAt,
+  floorAt,
+  floorName,
+} from './World';
+import {
+  ELEVATOR_DECKS,
+  relocalizeElevator,
+  type ElevatorHandle,
+  type ElevatorHooks,
+} from './Elevator';
+import {
+  advanceDoor,
+  advanceDrawer,
+  advanceLocker,
+  type DoorFixture,
+  type DrawerFixture,
+  type LockerFixture,
+} from './Fixtures';
 import { Player } from './Player';
 import { Monster } from './Monster';
 import { HorrorEffects } from './HorrorEffects';
 import { HorrorAudio } from './Audio';
 import { createJumpscareFaceDataUrl } from './Textures';
-import { Inventory, ITEM_DEFS, ItemId } from './Inventory';
+import { Inventory, ItemId } from './Inventory';
 import { Minimap, MinimapState } from './Minimap';
+import {
+  applyTranslations,
+  getLanguage,
+  L,
+  onLanguageChange,
+  setLanguage,
+  t,
+  type Lang,
+  type Localized,
+} from './i18n';
+import { NOTES } from './notes';
 
 /** A pickup lying in the world, waiting to be taken by hand. */
 interface PickupRecord {
@@ -24,6 +61,24 @@ type Interaction =
   | { kind: 'pickup'; label: string; pickup: PickupRecord }
   | { kind: 'breaker'; label: string }
   | { kind: 'boards'; label: string };
+
+/**
+ * A fixture the action button would work right now.
+ *
+ * Doors, drawers and lockers are kept out of `Interaction` on purpose: that
+ * union drives the hand prompt and the reach-out handler, which own the
+ * pickups. Fixtures get their own prompt so the two can never fight over the
+ * same press or swallow a fuse.
+ */
+type FixtureTarget =
+  | { kind: 'door'; label: string; door: DoorFixture }
+  | { kind: 'drawer'; label: string; desk: DrawerFixture }
+  | { kind: 'locker'; label: string; locker: LockerFixture };
+
+/** How far a fixture can be worked from, in metres. */
+const FIXTURE_REACH = 2.4;
+/** Fixtures further away than this are hidden and skipped entirely. */
+const FIXTURE_RADIUS = 30;
 
 /** How close you have to be before a prompt appears. */
 const REACH = 2.3;
@@ -54,121 +109,53 @@ const TOTAL_NOTES = 20;
 const BATTERY_DRAIN = 0.4;
 const BATTERY_RECOVER = 2.4;
 
-/** The story, told through eight notes scattered across the hospital. */
-const NOTES: Array<{ title: string; text: string }> = [
-  {
-    title: 'Kirish jurnali — Ren',
-    text: 'Mening ismim Doktor Elias Ren. Yigirma yil shu devorlar ichida jarrohlik qildim. Ular menga aytishdi: bu bemorlar boshqacha. Men ishonmadim. 1987-yil 4-noyabrda men Protokol 7 ni imzoladim va o\'sha imzo hali ham qonayapti.',
-  },
-  {
-    title: 'Ro\'yxat',
-    text: 'Biz ularning ismlarini yozmadik. Faqat raqamlar: №29, №31, №37. Eng oxirgisi eng kattasi edi. Va eng jim. U meni tanigan birinchi kishi edi — va oxirgisi bo\'lib qoldi.',
-  },
-  {
-    title: 'Qorong\'ulik',
-    text: '№31 bir kechada sochlari oqarib ketdi. U qichqirmadi. Faqat "u eshikdan chiqadi" deb takrorladi. Biz uni zanjirlab qo\'ydik. Men zanjirni men tanladim — bu men tanlagan oxirgi narsa edi.',
-  },
-  {
-    title: 'Kuzatuv',
-    text: '№37 ni ushlab turish uchun to\'rt kishi kerak bo\'ldi. U bizga qaramadi. U doim devorga qaradi — go\'yo u orqasidan kelayotgan narsani ko\'rgan edi. Bitta kechqurun u menga qaradi va "Ren, sen ham birimiz" dedi.',
-  },
-  {
-    title: 'Rentgen',
-    text: 'Suratda uning suyaklari boshqacha edi. Men o\'sha plyonkani ko\'rganimdan keyin ikki kun uxlamadim. Uch kundan keyin kasalxonani yopishdi. Lekin yopish hech narsani tashqarida qoldirmadi.',
-  },
-  {
-    title: 'Yoqish',
-    text: 'Bosh shifokor hujjatlarni yoqib yubordi. Men ham imzo chekdim. Hammasiga men imzo chekdim. Eshiklarni men qulfladim. Va kalitni o\'zim cho\'ntamga qo\'ydim — go\'yo bu xavfsizlik edi.',
-  },
-  {
-    title: '4-noyabr, soat 23:47',
-    text: 'O\'sha kecha hech kim chiqmadi. Faqat u chiqdi. Va u chiqqanida kasalxona jim bo\'lib qoldi. Men eshitdim — koridorda yurgan ovoz meni tanigan ovoz edi. U mening ismimni bilardi.',
-  },
-  {
-    title: 'Uyg\'onish',
-    text: 'Ertalab men o\'z xonamda uyg\'ondim. Deraza mixlangan. Telefon o\'lik. Ko\'zguda o\'zimni ko\'rdim — va bir soniya ko\'zguda meni ko\'rgan narsa men emas edim. Shu kundan boshlab bu yerdaman.',
-  },
-  {
-    title: 'Qabriston',
-    text: 'Kasalxona o\'liklarini shu yerga ko\'mishardi. Toshda ism yo\'q — faqat raqam. Eng katta qabrda raqam ham yo\'q, chunki u hech qachon ko\'milgan emas. Uning qabri bo\'sh. U hali yuryapti.',
-  },
-  {
-    title: 'Krematoriy hisoboti',
-    text: 'Kul orasida suyak qolmaydi. Faqat tishlar qoladi. Va ularning hammasi — bir xil o\'lchamda. Hammasi bir odamniki. Men o\'sha tishlarni sanadim. Yetmish ikkita. Bitta ko\'p.',
-  },
-  {
-    title: 'Tez yordam daftari',
-    text: 'Men kasalxonaga qaytib kelmadim. Lekin mashina o\'zi qaytdi. Eshiklari ochiq, ichida hech kim yo\'q. Va u yomg\'ir ichida qaytdi. Haydovchi o\'rindig\'ida iliq edi.',
-  },
-  {
-    title: 'Bosh shifokor xonasi',
-    text: 'Men Protokol 7 ni imzoladim. Eshikni qulfladim. Lekin men qulflagan eshik emas — men o\'zim qulflangan edim. Kalit hali ham cho\'ntamda. Uni olib tashlashga kuchim yetmadi.',
-  },
-  {
-    title: 'Kir yuvish xonasi',
-    text: 'Kiyimlar hali ham qurimagan. Ular bugun yuvilgan. Men kasalxonada yolg\'iz emasman — kimdir bu yerda hali ham ishlaydi. Va u mening xalatimni kiygan.',
-  },
-  {
-    title: 'Bolalar palatasi',
-    text: 'Yigirma to\'qqiz, o\'ttiz bir, o\'ttiz yetti. Ular raqam emas edi. Ular mening xatolarim edi, va ularning hammasi bir xil ovozda chaqirardi. Ovoz menga qaragan edi — va ismimni aytdi.',
-  },
-  {
-    title: 'Laboratoriya 7',
-    text: 'Namunalar shisha ichida qimirlaydi. Ular hali ham tirik. Ular meni taniydi — va ular meni kutishadi. Men o\'sha shishalarni o\'zim to\'ldirgandim. Men o\'sha ignalarni o\'zim kiritgandim.',
-  },
-  {
-    title: 'Qozonxona',
-    text: 'Qozonlar hali ham issiq. Kimdir o\'t yoqib turadi. Pastdan ovoz keladi — go\'yo kimdir zinapoyani ko\'tarib kelayotgandek. Va u qadam ovozi mening qadamlarim bilan bir xil.',
-  },
-  {
-    title: 'O\'ttiz yettinchi tortma',
-    text: 'Morgniyning pastki qavatida o\'ttiz yetti tortma bor. O\'ttiz oltitasi band. Oxirgisi ochiq — va u mening o\'lchamimda. Men hech qachon bu yerdan chiqmaganman. Men u yerdan hech qachon chiqmaganman.',
-  },
-  {
-    title: 'Izolyator',
-    text: 'Uchinchi qavatdagi izolyatorda faqat bitta karavot bor va u devorga mahkamlangan. Ichkaridan tirnalgan izlar eshikning yarim bo\'yidan baland emas. Demak u bola edi. Yoki u emaklagan. Yoki ikkalasi ham.',
-  },
-  {
-    title: 'Elektroterapiya jurnali',
-    text: '№37 ga kuniga uch marta muolaja berildi. Muolaja ishlamadi — u faqat kuchaydi. Oxirgi sessiyada u kresloni uzib tashladi va qayishni o\'zi bilan olib ketdi. Muolajani men bergandim. Men o\'z qo\'lim bilan.',
-  },
-  {
-    title: 'Tomdagi yozuv',
-    text: 'Tomga chiqish eshigi hech qachon qulflanmagan — bu yerdan chiqish mumkin edi. Faqat men qulfni ichkaridan sindirdim, chunki u tomdan ham pastga tushardi. Endi u men bilan birga shu binoda. Va u chiqishni yopishni biladi.',
-  },
-];
+/**
+ * How long the intro cutscene may make no progress before the game gives up on
+ * it and hands control back. The cinematic itself is longer than this - the
+ * watchdog measures stalls, not total length, so a slow-but-working intro is
+ * never cut short while a hung one always ends.
+ */
+const INTRO_STALL_MS = 5000;
+/** Ambient floor enforced once the intro ends: the room must be readable. */
+const GAMEPLAY_AMBIENT_FLOOR = 0.85;
+
+/**
+ * The story, told through twenty notes (see notes.ts).
+ */
 
 /** Rooms that have a scripted scare the first time you step inside. */
+/**
+ * Rooms that have a scripted scare the first time you step inside.
+ * Keyed by the LAYOUT character: the one room identifier that does not
+ * change when the language does.
+ */
 const SCARE_ROOMS: Record<string, 'whisper' | 'scare' | 'blackout'> = {
-  MORGNIY: 'scare',
-  'OPERATSIYA XONASI': 'whisper',
-  'DUSH XONASI': 'scare',
-  'RENTGEN XONASI': 'whisper',
-  'GENERATOR XONASI': 'blackout',
-  'XONA 202': 'whisper',
-  'ARXIV': 'blackout',
-  // The grounds
-  'QABRISTON': 'whisper',
-  'KREMATORIY': 'blackout',
-  'QO\u2018RIQXONA': 'scare',
-  'PODSTANSIYA': 'blackout',
-  'DARVOZA MAYDONI': 'whisper',
-  'AVTOTURARGOH': 'whisper',
-  // Second floor & deep basement
-  'BOSH SHIFOKOR XONASI': 'whisper',
-  'BOLALAR PALATASI': 'scare',
-  'IBODATXONA': 'blackout',
-  'KUZATUV XONASI': 'whisper',
-  'LABORATORIYA 7': 'scare',
-  'QOZONXONA': 'blackout',
-  'INKUBATOR XONASI': 'scare',
-  // Third floor
-  'IZOLYATOR': 'scare',
-  'ELEKTROTERAPIYA': 'whisper',
-  'GIDROTERAPIYA': 'scare',
-  'TOMGA CHIQISH': 'blackout',
-  'MORGNIY 2': 'scare',
-  'TUNEL': 'whisper',
+  'o': 'scare',
+  'h': 'whisper',
+  'q': 'scare',
+  'j': 'whisper',
+  'm': 'blackout',
+  'e': 'whisper',
+  'p': 'blackout',
+  'v': 'whisper',
+  'z': 'blackout',
+  'y': 'scare',
+  't': 'blackout',
+  'u': 'whisper',
+  'x': 'whisper',
+  'A': 'whisper',
+  'D': 'scare',
+  'F': 'blackout',
+  'E': 'whisper',
+  'P': 'scare',
+  'M': 'blackout',
+  'Q': 'scare',
+  'S': 'scare',
+  'T': 'whisper',
+  'U': 'scare',
+  'X': 'blackout',
+  'R': 'scare',
+  'O': 'whisper',
 };
 
 export class Game {
@@ -279,18 +266,77 @@ export class Game {
   private noteToastTimeout: number | null = null;
   private roomBannerTimeout: number | null = null;
   private damageTimeout: number | null = null;
+  /** The floor indicator card: a black plate with the deck name on it. */
   private stairTransition: HTMLElement | null = null;
   private stairFloorName: HTMLElement | null = null;
-  private stairCooldown = 0;
+  /** Index into ELEVATOR_DECKS for the deck the player is standing on. */
   private currentFloor = 1;
+
+  // --- Vintage cage elevator ------------------------------------------------
+  private elevator: ElevatorHandle | null = null;
+  /** Touch panel of floor buttons, raised while the player is in the cage. */
+  private liftPanel: HTMLElement | null = null;
+  private liftFloorButtons: HTMLButtonElement[] = [];
+  private liftLocationText: HTMLElement | null = null;
+  private liftArriveTimeout: number | null = null;
+  /** True while the player is standing inside the cage. */
+  private inLift = false;
+
+  // --- Doors, drawers and lockers -------------------------------------------
+  /** One entry per doorway; shut doors block the player outright. */
+  private doors: DoorFixture[] = [];
+  private desks: DrawerFixture[] = [];
+  private lockers: LockerFixture[] = [];
+  /** What the action button would work right now, if anything. */
+  private fixtureTarget: FixtureTarget | null = null;
+  private fixturePrompt: HTMLElement | null = null;
+  private fixtureLabel: HTMLElement | null = null;
+  /** Set while the player is shut inside a locker. */
+  private hidingInLocker: LockerFixture | null = null;
+  private lockerView: HTMLElement | null = null;
+  private lockerTimeout: number | null = null;
+  /**
+   * Hooks the lift calls back into. Held as a field so the module never gets a
+   * fresh pair of closures sixty times a second.
+   */
+  private readonly liftHooks: ElevatorHooks = {
+    onGateClank: () => this.audio?.playElevatorGate(),
+    onMotorStart: () => this.audio?.playElevatorMotor(),
+    onDing: () => this.audio?.playElevatorDing(),
+    onTeleport: (deckIndex) => this.onLiftTeleport(deckIndex),
+    onArrive: (deckIndex) => this.onLiftArrive(deckIndex),
+    shake: (amount, decay) => this.addShake(amount, decay),
+    flicker: (intensity) => this.effects?.setAmbientFloor(GAMEPLAY_AMBIENT_FLOOR * intensity),
+  };
+
+  // Intro cutscene
+  private introActive = false;
+  private introSkipRequested = false;
+  /** Set once the intro has handed control back; every exit path goes through forceEndIntro(). */
+  private introFinished = false;
+  private introWatchdogId: number | null = null;
+  private introRenderId: number | null = null;
+  private introLastProgress = 0;
+  private introEyelid: HTMLElement | null = null;
+  private introTypewriter: HTMLElement | null = null;
+  private introTypewriterLabel: HTMLElement | null = null;
+  private introTypewriterText: HTMLElement | null = null;
+  private skipIntroBtn: HTMLElement | null = null;
+  /** The live SKIP handler, held so it can be detached when the intro ends. */
+  private introSkipHandler: (() => void) | null = null;
 
   async init(): Promise<void> {
     this.cacheDom();
     this.prepareJumpscareFace();
     this.settings = this.loadSettings();
     this.syncSettingsUI();
+    this.installLanguageUI();
+    this.installRotateGuard();
+    this.installLiftUI();
+    this.installFixtures();
+    this.installAudioUnlock();
 
-    this.setLoadingProgress(8, 'Kasalxona eshigi ochilmoqda...');
+    this.setLoadingProgress(8, t('loading.1'));
     await this.yieldToBrowser();
 
     const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -306,7 +352,7 @@ export class Game {
     this.renderer.toneMappingExposure = 1.35;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    this.setLoadingProgress(20, 'Xonalar qurilmoqda...');
+    this.setLoadingProgress(20, t('loading.2'));
     await this.yieldToBrowser();
 
     this.scene = new THREE.Scene();
@@ -314,15 +360,25 @@ export class Game {
     this.scene.add(this.camera);
 
     // 18 rooms, doorways, gore - the heavy synchronous step
-    this.mapInfo = buildWorld(this.scene);
+    try {
+      this.mapInfo = buildWorld(this.scene);
+    } catch (buildErr) {
+      console.error('[buildWorld] failed:', buildErr);
+      throw buildErr;
+    }
+    this.bindFixtures();
+    this.currentFloor = floorAt(this.mapInfo.playerSpawn.z / CELL);
+    if (this.liftLocationText) {
+      this.liftLocationText.textContent = floorName(this.currentFloor);
+    }
 
-    this.setLoadingProgress(55, 'Ovoz tizimi yuklanmoqda...');
+    this.setLoadingProgress(55, t('loading.3'));
     await this.yieldToBrowser();
 
     this.audio = new HorrorAudio();
     this.audio.setMuted(this.settings.muted);
 
-    this.setLoadingProgress(65, 'Effektlar tayyorlanmoqda...');
+    this.setLoadingProgress(65, t('loading.4'));
     await this.yieldToBrowser();
 
     this.effects = new HorrorEffects(this.scene);
@@ -333,6 +389,8 @@ export class Game {
       () => this.audio?.playCreepySound()
     );
     this.effects.onLightning = () => this.onLightning();
+    // A tube stuttering dark should be heard as well as seen
+    this.effects.onFluorescentBuzz = () => this.audio?.playElectricBuzz();
 
     this.addMapLights();
 
@@ -341,13 +399,12 @@ export class Game {
     this.player.setColliders(this.mapInfo.colliders);
     this.player.setupKeyboard();
     this.player.setupMouseLook();
-    this.player.setupJoystick();
     this.player.setLookSensitivity(this.settings.sensitivity);
     this.player.onFootstep = (running) => this.audio?.playFootstep(running ? 0.34 : 0.2);
 
     this.collectPickups();
 
-    this.setLoadingProgress(85, 'Biror narsa uyg\'onmoqda...');
+    this.setLoadingProgress(85, t('loading.5'));
     await this.yieldToBrowser();
 
     this.monster = new Monster(this.mapInfo.grid, this.mapInfo.monsterSpawn);
@@ -360,7 +417,7 @@ export class Game {
 
     this.applyQuality();
 
-    this.setLoadingProgress(100, 'Tayyor!');
+    this.setLoadingProgress(100, t('loading.6'));
     await this.delay(400);
 
     this.setupEvents();
@@ -404,6 +461,16 @@ export class Game {
     this.roomBannerSubtitle = id('room-banner-subtitle');
     this.stairTransition = id('stair-transition');
     this.stairFloorName = id('stair-floor-name');
+    this.liftPanel = id('lift-panel');
+    this.liftLocationText = id('lift-location-text');
+    this.fixturePrompt = id('fixture-prompt');
+    this.fixtureLabel = id('fixture-label');
+    this.lockerView = id('locker-view');
+    this.introEyelid = id('intro-eyelid');
+    this.introTypewriter = id('intro-typewriter');
+    this.introTypewriterLabel = id('intro-typewriter')?.querySelector('.typewriter-label') as HTMLElement | null;
+    this.introTypewriterText = id('intro-typewriter')?.querySelector('.typewriter-text') as HTMLElement | null;
+    this.skipIntroBtn = id('skip-intro');
   }
 
   private yieldToBrowser(): Promise<void> {
@@ -654,26 +721,531 @@ export class Game {
 
   // --- Run lifecycle -------------------------------------------------------
 
+  // --- Intro cutscene -----------------------------------------------------
+
+  /** Typewriter effect: types `text` into `el` char-by-char, returns when done. */
+  private async typewriterEffect(el: HTMLElement, text: string, speed = 38): Promise<void> {
+    el.textContent = '';
+    const cursor = document.createElement('span');
+    cursor.className = 'typewriter-cursor';
+    el.appendChild(cursor);
+    for (let i = 0; i < text.length; i++) {
+      if (this.introSkipRequested) { el.textContent = text; cursor.remove(); return; }
+      el.insertBefore(document.createTextNode(text[i]), cursor);
+      // Typing is progress, and the narration is long enough that the watchdog
+      // would otherwise mistake it for a hang.
+      this.introAlive();
+      await this.delay(speed + (Math.random() * 20 - 10));
+    }
+    await this.delay(600);
+    cursor.remove();
+  }
+
+  /** Procedural cassette-click + tape hiss via Web Audio API. */
+  private playTapeClick(): void {
+    const ctx = this.audio?.['ctx'] as AudioContext | undefined;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Click
+    const clickOsc = ctx.createOscillator();
+    const clickGain = ctx.createGain();
+    clickOsc.type = 'square';
+    clickOsc.frequency.value = 80;
+    clickGain.gain.setValueAtTime(0.12, now);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    clickOsc.connect(clickGain).connect(ctx.destination);
+    clickOsc.start(now);
+    clickOsc.stop(now + 0.1);
+    // Tape hiss
+    const bufferSize = ctx.sampleRate * 4;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * 0.015;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    const hissGain = ctx.createGain();
+    hissGain.gain.setValueAtTime(0, now + 0.1);
+    hissGain.gain.linearRampToValueAtTime(0.06, now + 0.3);
+    hissGain.gain.linearRampToValueAtTime(0, now + 4);
+    const hissFilter = ctx.createBiquadFilter();
+    hissFilter.type = 'highpass';
+    hissFilter.frequency.value = 3000;
+    noise.connect(hissFilter).connect(hissGain).connect(ctx.destination);
+    noise.start(now + 0.1);
+    noise.stop(now + 4);
+  }
+
+  /** Procedural rain + distant thunder via Web Audio API. */
+  private playIntroRain(): void {
+    const ctx = this.audio?.['ctx'] as AudioContext | undefined;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Rain noise
+    const bufLen = ctx.sampleRate * 8;
+    const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) ch[i] = (Math.random() * 2 - 1);
+    const rain = ctx.createBufferSource();
+    rain.buffer = buf;
+    rain.loop = true;
+    const rainGain = ctx.createGain();
+    rainGain.gain.setValueAtTime(0, now);
+    rainGain.gain.linearRampToValueAtTime(0.08, now + 2);
+    const rainFilter = ctx.createBiquadFilter();
+    rainFilter.type = 'lowpass';
+    rainFilter.frequency.value = 800;
+    rain.connect(rainFilter).connect(rainGain).connect(ctx.destination);
+    rain.start(now);
+    // Fade out after 6 seconds
+    rainGain.gain.linearRampToValueAtTime(0, now + 6);
+    rain.stop(now + 6.5);
+  }
+
+  /** Procedural gasp sound. */
+  private playGasp(): void {
+    const ctx = this.audio?.['ctx'] as AudioContext | undefined;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const bufLen = ctx.sampleRate * 0.5;
+    const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) ch[i] = (Math.random() * 2 - 1);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.15, now + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1200;
+    filter.Q.value = 2;
+    src.connect(filter).connect(gain).connect(ctx.destination);
+    src.start(now);
+    src.stop(now + 0.55);
+  }
+
+  /** Procedural heartbeat pulse. */
+  private playHeartbeatPulse(): void {
+    const ctx = this.audio?.['ctx'] as AudioContext | undefined;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    for (let beat = 0; beat < 2; beat++) {
+      const t = now + beat * 0.25;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(55, t);
+      osc.frequency.exponentialRampToValueAtTime(35, t + 0.18);
+      gain.gain.setValueAtTime(0.25, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.22);
+    }
+  }
+
+  // --- Intro control: rendering, watchdog and the single exit path --------
+
+  /**
+   * The in-engine part of the intro needs its own render loop: the gameplay
+   * loop bails out immediately unless `state === 'playing'`, so without this
+   * the camera rising off the cot would never actually be drawn and the
+   * player would sit through a cutscene made entirely of black frames.
+   */
+  private introRenderTick = (): void => {
+    this.introRenderId = requestAnimationFrame(this.introRenderTick);
+    if (!this.renderer || !this.scene || !this.camera) return;
+    this.effects?.update(1 / 60, 0, this.camera);
+    this.renderer.render(this.scene, this.camera);
+  };
+
+  private startIntroRendering(): void {
+    if (this.introRenderId !== null) return;
+    this.introRenderId = requestAnimationFrame(this.introRenderTick);
+  }
+
+  private stopIntroRendering(): void {
+    if (this.introRenderId === null) return;
+    cancelAnimationFrame(this.introRenderId);
+    this.introRenderId = null;
+  }
+
+  /** Marks the cinematic as alive. The watchdog ends the intro if this stops. */
+  private introAlive(): void {
+    this.introLastProgress = performance.now();
+  }
+
+  /**
+   * A delay that gives up the moment the intro is over, checked in small
+   * slices so SKIP INTRO is instant instead of waiting out the current beat.
+   */
+  private async introDelay(ms: number): Promise<void> {
+    const slice = 50;
+    let waited = 0;
+    while (waited < ms && !this.introFinished) {
+      await this.delay(Math.min(slice, ms - waited));
+      waited += slice;
+      // A timer firing is progress, so the watchdog stays quiet through the
+      // long intentional beats and only trips on a genuine stall.
+      this.introAlive();
+    }
+  }
+
+  /** Polls the heartbeat so a hung animation can never strand the player on black. */
+  private armIntroWatchdog(): void {
+    this.clearIntroWatchdog();
+    this.introAlive();
+    this.introWatchdogId = window.setInterval(() => {
+      if (!this.introActive) {
+        this.clearIntroWatchdog();
+        return;
+      }
+      if (performance.now() - this.introLastProgress > INTRO_STALL_MS) {
+        this.forceEndIntro('failsafe');
+      }
+    }, 250);
+  }
+
+  private clearIntroWatchdog(): void {
+    if (this.introWatchdogId === null) return;
+    window.clearInterval(this.introWatchdogId);
+    this.introWatchdogId = null;
+  }
+
+  /** Puts one overlay away for good, inline styles and all. */
+  private killOverlay(el: HTMLElement | null): void {
+    if (!el) return;
+    el.classList.add('hidden');
+    el.classList.remove('open', 'in-cutscene');
+    el.style.display = 'none';
+    el.style.opacity = '0';
+    el.style.visibility = 'hidden';
+    el.style.pointerEvents = 'none';
+  }
+
+  /** Re-arms an overlay that killOverlay() shut down, for a replay. */
+  private reviveOverlay(el: HTMLElement | null): void {
+    if (!el) return;
+    el.classList.remove('hidden', 'open');
+    el.style.display = '';
+    el.style.opacity = '';
+    el.style.visibility = '';
+    el.style.pointerEvents = '';
+  }
+
+  /**
+   * The single way out of the cutscene.
+   *
+   * A finished intro, the SKIP button and the watchdog all funnel through
+   * here, so exactly one piece of code decides the player is back in control.
+   * That is what fixes the black screen: the eyelid overlay used to be left
+   * closed across the whole viewport, and nothing ever reopened it.
+   */
+  private forceEndIntro(reason: 'finished' | 'skipped' | 'failsafe'): void {
+    if (this.introFinished) return;
+    this.introFinished = true;
+    this.introActive = false;
+    // Aborts the running cinematic: every await in it checks this flag.
+    this.introSkipRequested = true;
+
+    this.clearIntroWatchdog();
+    this.stopIntroRendering();
+
+    // The SKIP button is gone with the cutscene, so its listener goes too:
+    // a stale handler would otherwise pile up on every replay.
+    if (this.skipIntroBtn && this.introSkipHandler) {
+      this.skipIntroBtn.removeEventListener('click', this.introSkipHandler);
+    }
+    this.introSkipHandler = null;
+
+    // 1. Every black curtain, forced out of the way.
+    this.killOverlay(this.introEyelid);
+    this.killOverlay(this.introTypewriter);
+    this.killOverlay(this.skipIntroBtn);
+    document.body.classList.remove('in-cutscene');
+
+    // 2. A pose that cannot be inside the bed, a wall or the floor. The spawn
+    //    cell is validated by buildWorld (it throws if it is inside a wall) and
+    //    sits in the corridor, clear of the gurney at the old spawn.
+    const spawn = this.mapInfo?.playerSpawn;
+    if (this.mapInfo && spawn) {
+      this.player?.reset(this.mapInfo.grid, spawn);
+      if (this.camera) {
+        this.camera.position.set(spawn.x, EYE_HEIGHT, spawn.z);
+        this.camera.rotation.set(0, 0, 0);
+        this.camera.updateMatrixWorld(true);
+      }
+    }
+
+    // 3. Light: the room, the walls and the doors are legible from the very
+    //    first frame, before the breaker is ever thrown.
+    this.effects?.setAmbientFloor(GAMEPLAY_AMBIENT_FLOOR);
+    this.flashlightOn = true;
+    this.flashlightBattery = Math.max(this.flashlightBattery, 60);
+    if (this.flashlight) {
+      this.flashlight.visible = true;
+      this.flashlight.intensity = Math.max(this.flashlight.intensity, 3.8);
+    }
+
+    // 4. Controls, HUD and the touch stick all come back.
+    if (this.player) this.player.inputDisabled = false;
+    this.hud?.classList.remove('hidden');
+    if (this.isTouchDevice()) {
+      this.mobileControls?.classList.remove('hidden');
+      const joystick = document.getElementById('dynamic-joystick');
+      if (joystick) {
+        joystick.classList.remove('hidden');
+        joystick.style.display = '';
+      }
+    }
+
+    // 5. If the cinematic hung or threw, startGame() may be awaiting it
+    //    forever. Starting the loop here is what makes the failsafe a real
+    //    guarantee rather than a cosmetic cleanup.
+    if (reason === 'failsafe' && this.state !== 'playing') this.beginPlay();
+  }
+
+  /** Run the full intro cutscene. Resolves when gameplay should start. */
+  private async runIntroCutscene(): Promise<void> {
+    this.introFinished = false;
+    this.introActive = true;
+    this.introSkipRequested = false;
+    if (this.player) this.player.inputDisabled = true;
+
+    // Phase 0: black screen over a rendered (but unseen) room. The overlays are
+    // revived here because a previous run may have forced them shut.
+    this.hud?.classList.add('hidden');
+    this.mobileControls?.classList.add('hidden');
+    document.body.classList.add('in-cutscene');
+    this.reviveOverlay(this.introEyelid);
+    this.reviveOverlay(this.introTypewriter);
+    this.reviveOverlay(this.skipIntroBtn);
+
+    // The in-engine phases need frames drawn while the game state is not
+    // 'playing' yet, and the watchdog guards against those frames never coming.
+    this.startIntroRendering();
+    this.armIntroWatchdog();
+
+    // Skip button handler. It ends the cutscene outright rather than setting a
+    // flag the remaining beats would still have to wait out. Held as a field so
+    // forceEndIntro() can detach this exact listener again.
+    this.introSkipHandler = () => { this.forceEndIntro('skipped'); };
+    this.skipIntroBtn?.addEventListener('click', this.introSkipHandler);
+
+    // ── PHASE 1: TAPE TRANSCRIPTION (black screen) ──
+    this.introTypewriterLabel && (this.introTypewriterLabel.textContent = t('intro.tapeLabel'));
+    await this.introDelay(800);
+    if (this.introFinished) return;
+    this.playIntroRain();
+    await this.introDelay(600);
+    if (this.introFinished) return;
+    this.playTapeClick();
+    await this.introDelay(1200);
+    if (this.introFinished) return;
+
+    const narration = t('intro.narration');
+    await this.typewriterEffect(this.introTypewriterText!, narration, 42);
+    this.introAlive();
+    if (this.introFinished) return;
+    if (!this.introSkipRequested) await this.introDelay(1200);
+    this.introAlive();
+    if (this.introFinished) return;
+
+    // ── PHASE 2: SENSORY AWAKENING (eyelid blink) ──
+    // Fade typewriter out
+    this.introTypewriter!.style.transition = 'opacity 0.8s ease';
+    this.introTypewriter!.style.opacity = '0';
+    await this.introDelay(900);
+    this.introAlive();
+    if (this.introFinished) return;
+    this.introTypewriter!.classList.add('hidden');
+    this.introTypewriter!.style.opacity = '';
+    this.introTypewriter!.style.transition = '';
+
+    // Eyelids: three blinks, ending OPEN. The final state must be open, or the
+    // two black bars cover the entire viewport for the rest of the game.
+    const blink = async (openMs: number, closedMs: number): Promise<void> => {
+      this.introEyelid!.classList.add('open');
+      await this.introDelay(openMs);
+      this.introAlive();
+      this.introEyelid!.classList.remove('open');
+      await this.introDelay(closedMs);
+      this.introAlive();
+    };
+    await blink(700, 500);
+    if (this.introFinished) return;
+    await blink(600, 400);
+    if (this.introFinished) return;
+    this.introEyelid!.classList.add('open');
+
+    // Play gasp
+    this.playGasp();
+    await this.introDelay(400);
+    this.introAlive();
+    if (this.introFinished) return;
+
+    // Camera: start lying on the cot, looking straight up at the ceiling
+    if (this.player && this.camera && this.mapInfo) {
+      const spawn = this.mapInfo.playerSpawn.clone();
+      this.player.init(this.mapInfo.grid, spawn);
+      this.player.setColliders(this.mapInfo.colliders);
+
+      // Position camera on the cot (lying down)
+      this.camera.position.set(spawn.x, 0.65, spawn.z);
+      // Look straight up at ceiling
+      const lookUp = new THREE.Vector3(spawn.x, spawn.y + 5, spawn.z);
+      this.camera.lookAt(lookUp);
+      // Add a slight roll for disorientation
+      this.camera.rotation.z = 0.15;
+    }
+
+    // The eyelids have done their job: take the overlay away entirely rather
+    // than leaving two 52%-height black bars sitting over the viewport.
+    await this.introDelay(300);
+    this.introAlive();
+    this.killOverlay(this.introEyelid);
+    await this.introDelay(800);
+    this.introAlive();
+    if (this.introFinished) return;
+
+    // ── PHASE 3: GETTING UP ──
+    // Smoothly rise from lying (Y 0.65 → 1.7) with dizziness sway
+    const riseDuration = 2200;
+    const riseStart = performance.now();
+    const startPos = this.camera!.position.clone();
+
+    await new Promise<void>((resolve) => {
+      const animate = () => {
+        // Every frame counts as progress: if rAF ever stops firing the
+        // watchdog notices and finishes the intro for us.
+        this.introAlive();
+        if (this.introFinished) { resolve(); return; }
+        const elapsed = performance.now() - riseStart;
+        const t = Math.min(1, elapsed / riseDuration);
+        // Smooth ease-in-out
+        const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+        // Camera rises
+        const baseY = 0.65 + (EYE_HEIGHT - 0.65) * ease;
+        const swayX = Math.sin(t * Math.PI * 3) * 0.08 * (1 - t);
+        const swayZ = Math.cos(t * Math.PI * 2.5) * 0.06 * (1 - t);
+        this.camera!.position.set(startPos.x + swayX, baseY, startPos.z + swayZ);
+
+        // Pitch down from looking up to looking forward
+        const startPitch = -Math.PI / 2.5; // looking nearly up
+        const targetPitch = 0; // looking forward
+        const currentPitch = startPitch + (targetPitch - startPitch) * ease;
+        const lookTarget = new THREE.Vector3(
+          this.camera!.position.x - Math.sin(0) * Math.cos(currentPitch),
+          this.camera!.position.y + Math.sin(currentPitch),
+          this.camera!.position.z - Math.cos(0) * Math.cos(currentPitch)
+        );
+        this.camera!.lookAt(lookTarget);
+        // Remove roll
+        this.camera!.rotation.z = 0.15 * (1 - ease);
+
+        if (t < 1 && !this.introSkipRequested) {
+          requestAnimationFrame(animate);
+        } else {
+          // Snap to standing height at the validated spawn - never inside the
+          // cot, a wall or the floor.
+          if (this.player && this.mapInfo && this.camera) {
+            const spawn = this.mapInfo.playerSpawn;
+            this.player.reset(this.mapInfo.grid, spawn);
+            this.camera.position.set(spawn.x, EYE_HEIGHT, spawn.z);
+            this.camera.rotation.set(0, 0, 0);
+          }
+          resolve();
+        }
+      };
+      requestAnimationFrame(animate);
+    });
+
+    this.introAlive();
+    if (this.introFinished) return;
+
+    // Heartbeat + the wall's last message
+    this.playHeartbeatPulse();
+    this.showMessage(t('intro.wall'), 3500);
+    await this.introDelay(2000);
+    this.introAlive();
+    if (this.introFinished) return;
+
+    // Player whisper subtitle
+    if (!this.introSkipRequested) {
+      this.showMessage(t('intro.whisper'), 4500);
+      await this.introDelay(2500);
+      this.introAlive();
+    }
+
+    // Cleanup - the one path that hands control back with everything restored.
+    this.forceEndIntro('finished');
+  }
+
   private async startGame(): Promise<void> {
     this.startScreen?.classList.add('hidden');
     this.pauseMenu?.classList.add('hidden');
-    this.hud?.classList.remove('hidden');
+
+    // Mobile Chrome will only start an AudioContext from inside a real user
+    // gesture, and this button press is the one it gets. Creating, resuming
+    // and confirming all happen in the same task so the drone is live before
+    // the cutscene begins.
+    await this.audio?.init();
+    this.audio?.resume();
+    await this.audio?.unlock();
 
     if (this.isTouchDevice()) {
       document.body.classList.add('touch-device');
-      this.mobileControls?.classList.remove('hidden');
-      this.player?.setupMobileLook(document.getElementById('game-canvas') as HTMLCanvasElement);
+      this.player?.setupMobileTouch(document.getElementById('game-canvas') as HTMLCanvasElement);
       await this.lockLandscape();
     }
 
-    await this.audio?.init();
-    this.audio?.resume();
-    this.audio?.startAmbience();
+    // ── Cinematic intro, with a hard guarantee that it always ends ──
+    try {
+      await this.runIntroCutscene();
+    } catch (error) {
+      // A thrown cutscene must never leave the player staring at a black
+      // screen: log it and drop straight into the game.
+      console.error('Intro cutscene failed - starting gameplay directly:', error);
+    } finally {
+      // Idempotent, so this is a no-op after a normal finish. After a skip, a
+      // hang or an exception it is what restores the room, the light and the
+      // controls.
+      this.forceEndIntro('failsafe');
+    }
 
+    // ── Transition to gameplay ──
+    this.beginPlay();
+  }
+
+  /**
+   * Hands control to the player: HUD on, ambience up and the render loop
+   * running. Split out of startGame() so the intro failsafe can reach it even
+   * if startGame() is still stuck awaiting a hung cutscene.
+   */
+  private beginPlay(): void {
+    if (this.state === 'playing' || this.state === 'gameover' || this.state === 'win') return;
+
+    this.hud?.classList.remove('hidden');
+    if (this.isTouchDevice()) this.mobileControls?.classList.remove('hidden');
+
+    // The context can be parked again by the time the cutscene ends, so the
+    // ambience is only started once audio is genuinely live.
+    void this.audio?.unlock().then((live) => {
+      if (live) this.audio?.startAmbience();
+    });
     this.elapsed = 0;
     this.state = 'playing';
+    // Discard the time the menu/intro spent not rendering, or the first frame
+    // of gameplay would jump the camera forward by several seconds.
     this.clock.getDelta();
-    this.showMessage("Narsalarni qo'l bilan oling (E). Shchotga esa saqlagich kerak.", 6000);
+
+    if (this.isTouchDevice()) {
+      this.showMessage(t('msg.controlsTouch'), 5000);
+    } else {
+      this.showMessage(t('msg.controlsDesktop'), 6000);
+    }
     this.gameLoop();
   }
 
@@ -689,11 +1261,21 @@ export class Game {
 
     this.elapsed += dt;
 
+    // Doors first, so the creature is never held up by one, then the rest of
+    // the fixtures, which settle before the player moves - that way the boxes
+    // they publish are the ones this frame's movement is tested against.
+    this.updateDoors(dt);
+    this.updateFixtures(dt);
+
     this.player?.update(dt);
 
-    if (this.monster && this.player) {
-      // Determine if the player is hidden from the monster
-      const isHidden = this.player.crouching && this.isNearHidingSpot();
+    // Nobody rides the cage except the player: while the doors are shut the
+    // creature is off the board entirely, so it can never catch you mid-ride.
+    if (this.monster && this.player && !this.elevator?.isLocked()) {
+      // A locker is a guaranteed hiding place; anywhere else it takes a crouch
+      // behind cover.
+      const isHidden =
+        this.hidingInLocker !== null || (this.player.crouching && this.isNearHidingSpot());
       const result = this.monster.update(dt, this.player.position, this.player.sprinting, isHidden);
       if (result.caught) this.hitByMonster();
     }
@@ -707,12 +1289,16 @@ export class Game {
     this.checkMainGate();
     this.checkOutdoors();
     this.updateRoomBanner();
-    this.checkStairTransition(dt);
+    this.updateElevator(dt);
     this.updateBattery(dt);
     this.updateDanger(dt);
     this.animatePickups(dt);
     this.animateGate(dt);
     this.updateHUD();
+    // Corrected right after the HUD: it disables the hand button whenever no
+    // pickup is in range, and doors, drawers and lockers are still things the
+    // action button has to be able to work.
+    this.syncFixtureButton();
     this.updateMinimap();
     this.applyShake(dt);
 
@@ -720,44 +1306,538 @@ export class Game {
   };
 
   
-  /** Detect when the player steps on a stair cell and trigger a floor transition. */
-  private checkStairTransition(dt: number): void {
-    if (this.stairCooldown > 0) { this.stairCooldown -= dt; return; }
-    if (!this.player || !this.mapInfo) return;
+  /* ---------------------------------------------------------------------
+   * The vintage cage elevator
+   * ------------------------------------------------------------------ */
 
-    const px = Math.round(this.player.position.x / CELL);
-    const pz = Math.round(this.player.position.z / CELL);
+  /**
+   * Builds the touch panel out of the deck table, so the buttons can never
+   * drift out of sync with the lift, and wires each one to a ride.
+   */
+  private installLiftUI(): void {
+    const rail = document.getElementById('lift-floors');
+    if (!rail || !this.liftPanel) return;
 
-    const onStair = STAIR_CELLS.some((s) => s.row === pz && s.col === px);
-    if (!onStair) return;
+    rail.textContent = '';
+    this.liftFloorButtons = [];
 
-    const newFloor = floorAt(pz);
-    if (newFloor === this.currentFloor) return;
+    // The panel reads top-down, the deck table is stored bottom-up.
+    for (let i = ELEVATOR_DECKS.length - 1; i >= 0; i--) {
+      const deck = ELEVATOR_DECKS[i];
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'lift-floor-btn';
+      button.dataset.deck = String(i);
 
-    this.stairCooldown = 3.0;
-    this.currentFloor = newFloor;
-    this.triggerFloorTransition(newFloor);
+      const cap = document.createElement('span');
+      cap.className = 'lift-floor-cap';
+      cap.textContent = L(deck.label);
+
+      const name = document.createElement('span');
+      name.className = 'lift-floor-name';
+      name.textContent = L(deck.name);
+
+      button.append(cap, name);
+      button.addEventListener('click', () => this.rideLift(i));
+      rail.appendChild(button);
+      this.liftFloorButtons.push(button);
+    }
+
+    // The lift bakes its labels into canvases, so it repaints on a language
+    // change rather than being rebuilt with the level.
+    onLanguageChange(() => {
+      if (this.elevator) relocalizeElevator(this.elevator);
+      for (const button of this.liftFloorButtons) {
+        const deck = ELEVATOR_DECKS[Number(button.dataset.deck)];
+        if (!deck) continue;
+        const cap = button.querySelector('.lift-floor-cap');
+        const name = button.querySelector('.lift-floor-name');
+        if (cap) cap.textContent = L(deck.label);
+        if (name) name.textContent = L(deck.name);
+      }
+      this.refreshLiftButtons();
+      if (this.liftLocationText) this.liftLocationText.textContent = floorName(this.currentFloor);
+    });
+
+    this.refreshLiftButtons();
   }
 
-  /** Fade to black, show floor name, then fade back in. Monster hidden during. */
-  private triggerFloorTransition(floor: number): void {
-    if (!this.stairTransition || !this.stairFloorName) return;
-    const name = floorName(floor);
-    if (!name) return;
+  /** Lights the button for the deck the cage is parked on. */
+  private refreshLiftButtons(): void {
+    if (!this.elevator) return;
+    const here = this.elevator.deck;
+    const locked = this.elevator.isLocked();
+    for (const button of this.liftFloorButtons) {
+      button.classList.toggle('active', Number(button.dataset.deck) === here);
+      button.disabled = locked;
+    }
+  }
 
-    this.stairFloorName.textContent = name;
-    this.stairTransition.classList.add('show');
+  /**
+   * Lets the creature through shut doors.
+   *
+   * Doors block the player and nothing else. The pathfinder knows nothing
+   * about them, so without this the Guilt Entity would walk up to a shut door
+   * and appear to give up - which reads as the AI breaking rather than as a
+   * door it cannot open. Running ahead of the fixture pass also means the leaf
+   * already has a head start by the time the player sees it move.
+   */
+  private updateDoors(dt: number): void {
+    void dt;
+    const monster = this.monster?.currentPosition;
+    if (!monster) return;
 
-    // Hide the monster during transition
+    for (const door of this.doors) {
+      if (door.target > 0.5) continue;
+      const distance = Math.hypot(door.centre.x - monster.x, door.centre.z - monster.z);
+      if (distance > 2.4) continue;
+
+      door.target = 1;
+      door.open = Math.min(door.open, 0.55);
+      if (!door.swung) {
+        door.swung = true;
+        this.audio?.playDoorSwing(true);
+      }
+    }
+  }
+
+  /**
+   * Runs the cage every frame and raises the button panel whenever the player
+   * is standing inside it. The doors, the ride and the re-seating all live in
+   * the Elevator module; this only turns button presses into rides and tells
+   * the rest of the game where the player ended up.
+   */
+  private updateElevator(dt: number): void {
+    const elevator = this.elevator;
+    if (!elevator) return;
+
+    elevator.update(dt, this.liftHooks);
+    elevator.setPower(this.powerOn);
+
+    if (!this.player) return;
+    this.inLift = elevator.isInside(this.player.position);
+    // The panel is only up when the cage is standing still with its gate open.
+    this.liftPanel?.classList.toggle('show', this.inLift && !elevator.isLocked());
+  }
+
+  /** Sends the cage to a deck. Ignored while it is already moving. */
+  private rideLift(deckIndex: number): void {
+    const elevator = this.elevator;
+    if (!elevator || !this.player) return;
+
+    if (!elevator.isInside(this.player.position)) {
+      this.showMessage(t('lift.enter'), 2600);
+      return;
+    }
+    if (deckIndex === elevator.deck) {
+      this.showMessage(t('lift.alreadyHere'), 1800);
+      return;
+    }
+    if (!elevator.startTravel(deckIndex, this.liftHooks)) return;
+
+    this.player.inputDisabled = true;
+    this.player.setRunning(false);
+    this.player.setCrouching(false);
+    this.liftPanel?.classList.remove('show');
+  }
+
+  /** Called the instant the cage is re-seated, so the player rides along. */
+  private onLiftTeleport(deckIndex: number): void {
+    this.onLiftFloorChange(deckIndex);
+
+    const elevator = this.elevator;
+    if (!elevator || !this.player) return;
+
+    // Step back into the cage on the new landing, slightly toward the gate so
+    // the player is clear of the back wall and the cage colliders.
+    this.player.teleport(elevator.centre.x, elevator.centre.z + 0.7);
     this.monster?.setVisible(false);
-
-    window.setTimeout(() => {
-      this.stairTransition?.classList.remove('show');
-      window.setTimeout(() => {
-        this.monster?.setVisible(true);
-      }, 500);
-    }, 1800);
   }
+
+  /** Called once the doors are open again: hand control back. */
+  private onLiftArrive(deckIndex: number): void {
+    const elevator = this.elevator;
+    this.effects?.setAmbientFloor(GAMEPLAY_AMBIENT_FLOOR);
+    if (this.player) this.player.inputDisabled = false;
+    this.refreshLiftButtons();
+
+    if (this.monster) {
+      this.monster.setVisible(true);
+      // Dr Aris patrols the floors. If he is standing at the landing when the
+      // doors open, the terror lands before the player can even step out.
+      if (elevator) {
+        const creature = this.monster.currentPosition;
+        const distance = Math.hypot(
+          creature.x - elevator.centre.x,
+          creature.z - elevator.centre.z,
+        );
+        if (distance < 13) {
+          this.audio?.playHeartbeat(1);
+          this.addShake(0.55, 0.9);
+          this.showMessage(t('lift.ambush'), 3400);
+        }
+      }
+    }
+
+    const deck = ELEVATOR_DECKS[deckIndex];
+    if (deck) this.showMessage(t('lift.arrived', { floor: L(deck.name) }), 2600);
+  }
+
+  /** Moves the HUD, the panel and the floor card onto the new deck. */
+  private onLiftFloorChange(deckIndex: number): void {
+    const deck = ELEVATOR_DECKS[deckIndex];
+    if (!deck) return;
+    this.currentFloor = deckIndex;
+
+    if (this.liftLocationText) this.liftLocationText.textContent = L(deck.name);
+    this.refreshLiftButtons();
+
+    // The arrival card flashes up for a beat, the way a floor indicator would.
+    if (this.stairTransition && this.stairFloorName) {
+      this.stairFloorName.textContent = L(deck.name);
+      this.stairTransition.classList.add('show');
+      if (this.liftArriveTimeout) window.clearTimeout(this.liftArriveTimeout);
+      this.liftArriveTimeout = window.setTimeout(() => {
+        this.stairTransition?.classList.remove('show');
+      }, 1400);
+    }
+  }
+  /* ---------------------------------------------------------------------
+   * Doors, desk drawers and lockers
+   * ------------------------------------------------------------------ */
+
+  /**
+   * The action prompt for fixtures, plus the keys that work it.
+   *
+   * A capture-phase listener on the hand button would fight the existing
+   * reach-out handler, so fixtures get their own tappable prompt and their own
+   * key. Nothing here can ever consume an inventory item by accident.
+   */
+  private installFixtures(): void {
+    this.fixturePrompt?.addEventListener('click', (event) => {
+      event.preventDefault();
+      this.useFixture();
+    });
+
+    window.addEventListener('keydown', (event) => {
+      if (event.code !== 'KeyF' || event.repeat) return;
+      if (!this.fixtureTarget) return;
+      event.preventDefault();
+      this.useFixture();
+    });
+
+    // The hand button works fixtures as well as pickups. It is registered
+    // after the reach-out handler and bails out when a pickup is in range, so
+    // the two can never both fire on one press.
+    this.handButton?.addEventListener('pointerdown', () => {
+      if (this.interaction !== null || !this.fixtureTarget) return;
+      this.useFixture();
+    });
+
+    // The prompt is inside the HUD, which the intro hides for its duration.
+    this.fixturePrompt?.classList.remove('show');
+  }
+
+  /**
+   * Re-enables the hand button when the only thing in reach is a fixture.
+   *
+   * The HUD disables it whenever no pickup is in range, and the HUD is not the
+   * place to teach it about doors, so it is corrected one line later.
+   */
+  private syncFixtureButton(): void {
+    const button = this.handButton;
+    if (!button) return;
+    if (this.interaction !== null) return;
+
+    const ready = this.fixtureTarget !== null;
+    button.disabled = !ready;
+    button.classList.toggle('active', ready);
+  }
+
+  /**
+   * Arms a one-shot audio unlock on the next chunk of user input.
+   *
+   * Mobile Chrome parks an AudioContext whenever the page is backgrounded or
+   * the tab is re-focused, and the game keeps running through the intro for
+   * thirty seconds after the one click it gets. This is what makes the drone
+   * and the door creaks come back when the player touches the screen again.
+   */
+  private installAudioUnlock(): void {
+    const unlock = (): void => {
+      void this.audio?.unlock().then((live) => {
+        if (!live) return;
+        if (this.state === 'playing') this.audio?.startAmbience();
+        document.removeEventListener('pointerdown', unlock, true);
+        document.removeEventListener('keydown', unlock, true);
+        document.removeEventListener('touchstart', unlock, true);
+      });
+    };
+    document.addEventListener('pointerdown', unlock, true);
+    document.addEventListener('keydown', unlock, true);
+    document.addEventListener('touchstart', unlock, true);
+  }
+
+  /**
+   * Adopts the live fixtures out of a freshly built level, and hides the ward
+   * keys in the desk drawers they belong to.
+   */
+  private bindFixtures(): void {
+    const map = this.mapInfo;
+    if (!map) return;
+
+    this.elevator = map.elevator;
+    this.doors = map.doors;
+    this.desks = map.desks;
+    this.lockers = map.lockers;
+
+    this.fixtureTarget = null;
+    this.hidingInLocker = null;
+    this.lockerView?.classList.remove('show');
+    document.body.classList.remove('in-locker');
+
+    this.stashKeysInDesks();
+  }
+
+  /**
+   * Moves every loose ward key into the drawer of the desk standing on its
+   * cell.
+   *
+   * World lays the keys out on the floor so the level builder can prove they
+   * are reachable; this is where they stop being floor pickups. Their item id
+   * is cleared in the same pass, which is what stops the player reaching
+   * through a shut drawer and taking one anyway.
+   */
+  private stashKeysInDesks(): void {
+    const scene = this.scene;
+    if (!scene || this.desks.length === 0) return;
+
+    const loose: THREE.Object3D[] = [];
+    scene.traverse((child) => {
+      if (child.userData.itemId === 'key') loose.push(child);
+    });
+
+    const scratch = new THREE.Vector3();
+    for (const key of loose) {
+      key.getWorldPosition(scratch);
+
+      let best: DrawerFixture | null = null;
+      let bestDistance = 3.2;
+      for (const desk of this.desks) {
+        const distance = Math.hypot(desk.centre.x - scratch.x, desk.centre.z - scratch.z);
+        if (distance >= bestDistance) continue;
+        bestDistance = distance;
+        best = desk;
+      }
+      if (!best) continue;
+
+      const index = typeof key.userData.pickupIndex === 'number' ? key.userData.pickupIndex : -1;
+      key.parent?.remove(key);
+      delete key.userData.itemId;
+      delete key.userData.pickupIndex;
+      // Decorative from here on: the drawer hands the key over, not the mesh.
+      key.userData.isKey = false;
+      key.userData.isDrawerLoot = true;
+      key.position.set(0, 0.6, 0.05);
+      key.rotation.set(0, 0, Math.PI / 2);
+
+      best.drawer.add(key);
+      best.loot = key;
+      best.lootKind = 'key';
+      best.lootIndex = index;
+    }
+  }
+
+  /**
+   * Runs the doors, the drawers and the lockers, publishes the shut ones as
+   * blockers, and decides what the action button would work.
+   */
+  private updateFixtures(dt: number): void {
+    if (!this.player) return;
+    const position = this.player.position;
+    const monster = this.monster?.currentPosition ?? null;
+
+    // --- Doors ----------------------------------------------------------
+    // Only the doors around the player are drawn, animated or blocking. There
+    // are over a hundred of them and most are nowhere near anyone.
+    const blockers: THREE.Box3[] = [];
+    for (const door of this.doors) {
+      const distance = Math.hypot(door.centre.x - position.x, door.centre.z - position.z);
+      if (distance > FIXTURE_RADIUS) {
+        door.hinge.visible = false;
+        continue;
+      }
+      door.hinge.visible = true;
+
+      // Something heavy is coming through: the leaf is shoved open ahead of it.
+      if (monster && !door.swung) {
+        const creatureDistance = Math.hypot(door.centre.x - monster.x, door.centre.z - monster.z);
+        if (creatureDistance < 2.4) {
+          door.swung = true;
+          door.target = 1;
+        }
+      }
+
+      advanceDoor(door, dt);
+      // A leaf that is still opening is left passable, so nobody is ever
+      // trapped between the frame and a door swinging shut on them.
+      if (door.open < 0.35 && door.target < 0.5) blockers.push(door.box);
+    }
+    this.player.setBlockers(blockers);
+
+    // --- Drawers and lockers --------------------------------------------
+    for (const desk of this.desks) advanceDrawer(desk, dt);
+    for (const locker of this.lockers) advanceLocker(locker, dt);
+
+    // --- What the action button would work ------------------------------
+    let best: FixtureTarget | null = null;
+
+    if (this.hidingInLocker) {
+      best = { kind: 'locker', label: t('act.lockerLeave'), locker: this.hidingInLocker };
+    } else {
+      let bestDistance = FIXTURE_REACH;
+
+      for (const door of this.doors) {
+        const distance = Math.hypot(door.centre.x - position.x, door.centre.z - position.z);
+        if (distance >= bestDistance) continue;
+        bestDistance = distance;
+        best = {
+          kind: 'door',
+          label: door.target > 0.5 ? t('act.doorClose') : t('act.doorOpen'),
+          door,
+        };
+      }
+
+      for (const desk of this.desks) {
+        const distance = Math.hypot(desk.centre.x - position.x, desk.centre.z - position.z);
+        if (distance >= bestDistance) continue;
+        bestDistance = distance;
+        best = { kind: 'drawer', label: this.drawerLabel(desk), desk };
+      }
+
+      for (const locker of this.lockers) {
+        const distance = Math.hypot(locker.centre.x - position.x, locker.centre.z - position.z);
+        if (distance >= bestDistance) continue;
+        bestDistance = distance;
+        best = { kind: 'locker', label: t('act.lockerEnter'), locker };
+      }
+    }
+
+    this.fixtureTarget = best;
+    this.fixturePrompt?.classList.toggle('show', best !== null);
+    if (best && this.fixtureLabel) this.fixtureLabel.textContent = best.label;
+  }
+
+  /** What the drawer prompt should say, given what is still inside it. */
+  private drawerLabel(desk: DrawerFixture): string {
+    if (!desk.opened) {
+      return desk.lootKind === 'key' ? t('act.drawerKey') : t('act.drawer');
+    }
+    if (desk.loot) return desk.lootKind === 'key' ? t('act.takeKey') : t('act.takeLoot');
+    return desk.slide > 0.5 ? t('act.drawerShut') : t('act.drawer');
+  }
+
+  /** Works whatever fixture the prompt is offering. */
+  private useFixture(): void {
+    const target = this.fixtureTarget;
+    if (!target) return;
+
+    if (target.kind === 'door') {
+      const opening = target.door.target < 0.5;
+      target.door.target = opening ? 1 : 0;
+      target.door.swung = true;
+      this.audio?.playDoorSwing(opening);
+      return;
+    }
+
+    if (target.kind === 'drawer') {
+      const desk = target.desk;
+      if (!desk.opened) {
+        desk.opened = true;
+        desk.target = 1;
+        this.audio?.playDrawerSlide();
+        return;
+      }
+      if (desk.loot) {
+        this.takeDrawerLoot(desk);
+        return;
+      }
+      desk.target = desk.target > 0.5 ? 0 : 1;
+      this.audio?.playDrawerSlide();
+      return;
+    }
+
+    if (this.hidingInLocker) this.leaveLocker();
+    else this.enterLocker(target.locker);
+  }
+
+  /** Empties a drawer into the player's hands. */
+  private takeDrawerLoot(desk: DrawerFixture): void {
+    const kind = desk.lootKind;
+    const index = desk.lootIndex;
+    desk.loot?.parent?.remove(desk.loot);
+    desk.loot = null;
+
+    if (kind === 'key') {
+      this.inventory?.add('key');
+      this.keysCollected = this.inventory?.totalKeys ?? this.keysCollected + 1;
+      if (index >= 0) this.keyTaken.add(index);
+      this.marksDirty = true;
+      document.getElementById(`key-${this.keysCollected}`)?.classList.add('collected');
+      this.audio?.playKeyPickup();
+      this.showMessage(t('msg.keyFound', { keys: this.keysCollected, total: TOTAL_KEYS }), 2400);
+      this.updateObjective();
+      if (this.keysCollected >= TOTAL_KEYS) this.unlockExit();
+      return;
+    }
+
+    const item: ItemId = kind === 'battery' ? 'battery' : 'bottle';
+    this.inventory?.add(item);
+    this.audio?.playKeyPickup();
+    this.showMessage(t('msg.drawerLoot', { item: t(`item.${item}.name`) }), 2400);
+  }
+
+  /** Opens the locker, climbs in and shuts the door behind the player. */
+  private enterLocker(locker: LockerFixture): void {
+    if (!this.player || this.hidingInLocker) return;
+
+    locker.target = 1;
+    this.audio?.playLockerDoor(true);
+    this.hidingInLocker = locker;
+
+    // Frozen inside: movement and look are both off, which is what makes the
+    // vents feel like the only window on the room.
+    this.player.inputDisabled = true;
+    this.player.place(locker.inside.x, locker.inside.z, locker.yaw);
+
+    this.lockerView?.classList.add('show');
+    document.body.classList.add('in-locker');
+    this.showMessage(t('msg.lockerIn'), 2600);
+
+    // Shut it behind you once you are in.
+    if (this.lockerTimeout) window.clearTimeout(this.lockerTimeout);
+    this.lockerTimeout = window.setTimeout(() => {
+      locker.target = 0;
+      this.audio?.playLockerDoor(false);
+    }, 700);
+  }
+
+  /** Steps back out into the corridor. */
+  private leaveLocker(): void {
+    const locker = this.hidingInLocker;
+    if (!locker || !this.player) return;
+
+    if (this.lockerTimeout) window.clearTimeout(this.lockerTimeout);
+    this.hidingInLocker = null;
+    locker.target = 1;
+    this.audio?.playLockerDoor(true);
+
+    this.player.inputDisabled = false;
+    this.player.teleport(locker.outside.x, locker.outside.z);
+    this.lockerView?.classList.remove('show');
+    document.body.classList.remove('in-locker');
+    this.showMessage(t('msg.lockerOut'), 1800);
+  }
+
   private pauseGame(): void {
     if (this.state !== 'playing') return;
     this.state = 'paused';
@@ -794,6 +1874,11 @@ export class Game {
       this.scene.add(this.camera);
 
       this.mapInfo = buildWorld(this.scene);
+      this.bindFixtures();
+      this.currentFloor = floorAt(this.mapInfo.playerSpawn.z / CELL);
+      if (this.liftLocationText) this.liftLocationText.textContent = floorName(this.currentFloor);
+      if (this.player) this.player.inputDisabled = false;
+      this.refreshLiftButtons();
       this.minimap?.attach(this.mapInfo);
       this.player?.reset(this.mapInfo.grid, this.mapInfo.playerSpawn);
       this.player?.setColliders(this.mapInfo.colliders);
@@ -906,7 +1991,7 @@ export class Game {
           kind: 'item',
           noteIndex: -1,
           item: item as ItemId,
-          label: `${ITEM_DEFS[item as ItemId].name} olish`,
+          label: t('act.take', { item: t(`item.${item}.name`) }),
         });
       } else if (child.userData.isNote) {
         const noteIndex = typeof child.userData.noteIndex === 'number' ? child.userData.noteIndex : -1;
@@ -915,7 +2000,7 @@ export class Game {
           kind: 'note',
           noteIndex,
           item: 'key',
-          label: 'Qaydni oqish',
+          label: t('act.readNote'),
         });
       }
     });
@@ -948,7 +2033,7 @@ export class Game {
       }
     });
 
-    this.showMessage('Elektr yoqildi. Kasalxona ham uyg\'ondi.', 4200);
+    this.showMessage(t('msg.powerOn'), 4200);
     this.updateObjective();
   }
 
@@ -969,14 +2054,14 @@ export class Game {
 
     if (!this.visitedRooms.has(index)) {
       this.visitedRooms.add(index);
-      this.triggerRoomScare(room.name);
+      this.triggerRoomScare(room);
     }
   }
 
   private showRoomBanner(room: RoomInfo): void {
     if (!this.roomBanner) return;
-    if (this.roomBannerName) this.roomBannerName.textContent = room.name;
-    if (this.roomBannerSubtitle) this.roomBannerSubtitle.textContent = room.subtitle;
+    if (this.roomBannerName) this.roomBannerName.textContent = L(room.name);
+    if (this.roomBannerSubtitle) this.roomBannerSubtitle.textContent = L(room.subtitle);
 
     this.roomBanner.classList.add('show');
     if (this.roomBannerTimeout) window.clearTimeout(this.roomBannerTimeout);
@@ -985,10 +2070,12 @@ export class Game {
     }, 3600);
   }
 
-  private triggerRoomScare(roomName: string): void {
-    const scare = SCARE_ROOMS[roomName];
-    if (!scare || this.scriptedScares.has(roomName)) return;
-    this.scriptedScares.add(roomName);
+  private triggerRoomScare(room: RoomInfo): void {
+    // The table is keyed by the room's LAYOUT character, the one identifier
+    // that survives a language change.
+    const scare = SCARE_ROOMS[room.key];
+    if (!scare || this.scriptedScares.has(room.key)) return;
+    this.scriptedScares.add(room.key);
 
     if (scare === 'whisper') {
       this.audio?.playWhisper();
@@ -1033,7 +2120,7 @@ export class Game {
       bestDistance = boards.distance;
       best = {
         kind: 'boards',
-        label: this.inventory?.has('crowbar') ? "Lom bilan ochish" : "Eshik mixlangan",
+        label: this.inventory?.has('crowbar') ? t('act.pry') : t('act.boarded'),
       };
     }
 
@@ -1044,7 +2131,7 @@ export class Game {
     if (!this.powerOn && breakerDistance < bestDistance) {
       best = {
         kind: 'breaker',
-        label: this.inventory?.has('fuse') ? "Saqlagichni o'rnatish" : "Saqlagich kerak",
+        label: this.inventory?.has('fuse') ? t('act.installFuse') : t('act.needFuse'),
       };
     }
 
@@ -1076,7 +2163,7 @@ export class Game {
 
     if (target.kind === 'boards') {
       if (!this.inventory?.has('crowbar')) {
-        this.showMessage("Eshik mixlangan. Lom kerak.", 2600);
+        this.showMessage(t('msg.boarded'), 2600);
         return;
       }
       this.pryBoardedDoor();
@@ -1084,7 +2171,7 @@ export class Game {
     }
 
     if (!this.inventory?.has('fuse')) {
-      this.showMessage("Shchotda saqlagich yo'q. Ombxonadan toping.", 3200);
+      this.showMessage(t('msg.noFuse'), 3200);
       return;
     }
     this.inventory.take('fuse');
@@ -1124,7 +2211,7 @@ export class Game {
       if (this.keysCollected > 0) {
         document.getElementById(`key-${this.keysCollected}`)?.classList.add('collected');
       }
-      this.showMessage(`Kalit ${this.keysCollected}/${TOTAL_KEYS} topildi`, 2200);
+      this.showMessage(t('msg.keyFound', { keys: this.keysCollected, total: TOTAL_KEYS }), 2200);
       this.updateObjective();
       if (this.keysCollected >= TOTAL_KEYS) this.unlockExit();
       return;
@@ -1133,14 +2220,16 @@ export class Game {
     if (pickup.item === 'card') {
       this.cardCollected = true;
       document.getElementById('card-icon')?.classList.add('collected');
-      this.showMessage("Darvoza kartasi topildi", 2600);
+      this.showMessage(t('msg.cardFound'), 2600);
       this.unlockGate();
       this.updateObjective();
       return;
     }
 
-    const def = ITEM_DEFS[pickup.item];
-    this.showMessage(`${def.name} olindi \u2014 ${def.hint}`, 3000);
+    this.showMessage(
+      t('msg.itemTaken', { item: t(`item.${pickup.item}.name`), hint: t(`item.${pickup.item}.hint`) }),
+      3000
+    );
     this.updateObjective();
   }
 
@@ -1160,7 +2249,7 @@ export class Game {
     this.boardedDoors = [];
     this.audio?.playDoorUnlock();
     this.addShake(0.18, 0.5);
-    this.showMessage("Mixlar chiqdi \u2014 dush xonasi ochildi", 3200);
+    this.showMessage(t('msg.pried'), 3200);
     this.updateObjective();
   }
 
@@ -1170,15 +2259,14 @@ export class Game {
       if (!this.inventory?.take('battery')) return;
       this.flashlightBattery = Math.min(100, this.flashlightBattery + 45);
       this.audio?.playKeyPickup();
-      this.showMessage("Batareya almashtirildi", 2000);
+      this.showMessage(t('msg.battery'), 2000);
       return;
     }
     if (id === 'bottle') {
       this.throwBottle();
       return;
     }
-    const def = ITEM_DEFS[id];
-    this.showMessage(`${def.name}: ${def.hint}`, 2600);
+    this.showMessage(t('msg.itemUsed', { item: t(`item.${id}.name`), hint: t(`item.${id}.hint`) }), 2600);
   }
 
   /**
@@ -1227,7 +2315,7 @@ export class Game {
         this.spawnShardBurst(impact);
         // The noise drags the creature off to look, even mid-chase.
         this.monster?.goInvestigateAt(impact);
-        this.showMessage("Shisha sinadi \u2014 u ovozga qaradi", 2200);
+        this.showMessage(t('msg.glass'), 2200);
       } else {
         requestAnimationFrame(tick);
       }
@@ -1293,7 +2381,7 @@ export class Game {
       this.mapInfo.exitLock.material.emissiveIntensity = 2.2;
     }
     this.audio?.playDoorUnlock();
-    this.showMessage('Barcha kalitlar topildi — qabulxonaga yuguring!', 4000);
+    this.showMessage(t('msg.allKeys'), 4000);
     this.updateObjective();
   }
 
@@ -1309,9 +2397,9 @@ export class Game {
     if (this.exitOpened) return;
 
     const blocked = !this.powerOn
-      ? 'Eshik elektrsiz ochilmaydi — generatorni toping'
+      ? t('msg.exitUnpowered')
       : this.keysCollected < TOTAL_KEYS
-        ? `Eshik qulflangan — ${TOTAL_KEYS - this.keysCollected} ta kalit kerak`
+        ? t('msg.exitLocked', { left: TOTAL_KEYS - this.keysCollected })
         : null;
 
     if (blocked) {
@@ -1343,7 +2431,7 @@ export class Game {
 
     this.audio?.playDoorUnlock();
     this.addShake(0.2, 0.7);
-    this.showMessage('Eshik ochildi. Hovliga chiqing — asosiy darvoza shimolda.', 4600);
+    this.showMessage(t('msg.exitOpen'), 4600);
     this.updateObjective();
   }
 
@@ -1361,7 +2449,7 @@ export class Game {
     this.audio?.setRaining(outdoors);
 
     if (outdoors) {
-      this.showMessage('Tashqarida. Yomg\u2018ir yog\u2018adi va osmon ochiq.', 4200);
+      this.showMessage(t('msg.outdoors'), 4200);
     }
   }
 
@@ -1413,7 +2501,7 @@ export class Game {
     }
 
     document.getElementById('power-icon')?.classList.add('collected');
-    this.showMessage('Podstansiya ishga tushdi — darvoza motori quvvat oldi.', 4400);
+    this.showMessage(t('msg.substationOn'), 4400);
     this.unlockGate();
     this.updateObjective();
   }
@@ -1422,7 +2510,7 @@ export class Game {
   private unlockGate(): void {
     if (!this.substationOn) return;
     if (!this.cardCollected) {
-      this.showMessage('Darvoza motori ishlaydi — endi karta kerak.', 3600);
+      this.showMessage(t('msg.gateNeedsCard'), 3600);
       return;
     }
     this.openMainGate();
@@ -1440,7 +2528,7 @@ export class Game {
 
     this.audio?.playGateUnlock();
     this.addShake(0.65, 1.5);
-    this.showMessage('ASOSIY DARVOZA OCHILDI — yuguring!', 5200);
+    this.showMessage(t('msg.gateOpen'), 5200);
     this.updateObjective();
   }
 
@@ -1474,8 +2562,8 @@ export class Game {
     }
 
     const blocked = !this.substationOn
-      ? 'Darvoza motori quvvatsiz — podstansiyani yoqing'
-      : 'Darvoza qulflangan — qo\u2018riqxonadan kartani toping';
+      ? t('msg.gateNoPower')
+      : t('msg.gateLocked');
 
     if (this.gateNoticeCooldown <= 0) {
       this.gateNoticeCooldown = 3;
@@ -1496,7 +2584,7 @@ export class Game {
     this.monster?.stun(3.2);
 
     if (this.health <= 0) this.onPlayerCaught();
-    else this.showMessage(`Yaralandingiz — ${this.health}%`, 1800);
+    else this.showMessage(t('msg.hurt', { health: this.health }), 1800);
   }
 
   private addShake(amount: number, duration: number): void {
@@ -1537,7 +2625,7 @@ export class Game {
       if (this.flashlightBattery <= 0) {
         this.flashlightOn = false;
         if (this.flashlight) this.flashlight.intensity = 0;
-        this.showMessage('Batareya tugadi — qorong\'uda quvvatlanadi', 3000);
+        this.showMessage(t('msg.batteryDead'), 3000);
       }
     } else if (recovering) {
       this.flashlightBattery = Math.min(100, this.flashlightBattery + BATTERY_RECOVER * dt);
@@ -1689,22 +2777,23 @@ export class Game {
     if (!this.objectiveText) return;
 
     if (!this.powerOn) {
-      const fuse = this.inventory?.has('fuse') ? 'saqlagich bor' : 'saqlagich omborxonada';
-      this.objectiveText.textContent = `Shchotga quvvat bering \u2014 ${fuse}`;
+      this.objectiveText.textContent = t(
+        this.inventory?.has('fuse') ? 'obj.power.withFuse' : 'obj.power.noFuse'
+      );
       this.phase = 'power';
     } else if (this.keysCollected < TOTAL_KEYS) {
-      this.objectiveText.textContent = `Kalitlar ${this.keysCollected}/${TOTAL_KEYS} — kasalxonani qidiring`;
+      this.objectiveText.textContent = t('obj.keys', { keys: this.keysCollected, total: TOTAL_KEYS });
       this.phase = 'keys';
     } else if (!this.exitOpened) {
-      this.objectiveText.textContent = 'Chiqish eshigi ochilmoqda — qabulxonaga boring';
+      this.objectiveText.textContent = t('obj.escape');
       this.phase = 'escape';
     } else if (!this.cardCollected || !this.substationOn) {
       const card = this.cardCollected ? '\u2713' : '\u2014';
       const power = this.substationOn ? '\u2713' : '\u2014';
-      this.objectiveText.textContent = `Tashqarida: karta ${card} · podstansiya ${power}`;
+      this.objectiveText.textContent = t('obj.outside', { card, power });
       this.phase = 'outside';
     } else {
-      this.objectiveText.textContent = 'Asosiy darvoza ochildi — shimolga yuguring!';
+      this.objectiveText.textContent = t('obj.gate');
       this.phase = 'gate';
     }
   }
@@ -1725,9 +2814,13 @@ export class Game {
     if (!note || !this.noteToast) return;
 
     if (this.noteToastTitle) {
-      this.noteToastTitle.textContent = `Qayd ${this.notesCollected}/${TOTAL_NOTES} — ${note.title}`;
+      this.noteToastTitle.textContent = t('msg.note', {
+        notes: this.notesCollected,
+        total: TOTAL_NOTES,
+        title: L(note.title),
+      });
     }
-    if (this.noteToastText) this.noteToastText.textContent = note.text;
+    if (this.noteToastText) this.noteToastText.textContent = L(note.text);
 
     this.noteToast.classList.add('show');
     if (this.noteToastTimeout) window.clearTimeout(this.noteToastTimeout);
@@ -1740,7 +2833,7 @@ export class Game {
 
   private toggleFlashlight(): void {
     if (!this.flashlightOn && this.flashlightBattery <= 0) {
-      this.showMessage('Batareya yo\'q — biroz kutib turing', 1800);
+      this.showMessage(t('msg.noBattery'), 1800);
       return;
     }
     this.flashlightOn = !this.flashlightOn;
@@ -1802,21 +2895,26 @@ export class Game {
       if (hint) {
         hint.textContent =
           this.phase === 'power'
-            ? 'Qorong\'u sizni yutdi. Saqlagichni o\'rnatganingizda yorug\'lik sizni qutqarardi. U bir vaqtlar sizning bemoringiz edi — endi u shifokor.'
+            ? t('over.power')
             : this.phase === 'keys'
-              ? 'U sizni tanidi, Ren. U doim sizni tanigan edi. Kasalxona endi ko\'rinadi — va u ham sizni ko\'rdi.'
+              ? t('over.keys')
               : this.phase === 'escape'
-                ? 'Kalitlar cho\'ntangizda qoldi. U eshikni yopishni biladi — u ko\'p yillardan beri shu erda eshiklarni yopadi.'
-                : 'Siz tashqariga chiqdingiz — lekin darvoza hali ham qulflangan edi. Podstansiyani yondirish kerak edi. U sizni yomg\'ir ostida kutdi.';
+                ? t('over.escape')
+                : t('over.outside');
       }
 
       const stats = document.getElementById('gameover-stats');
       if (stats) {
-        stats.textContent =
-          `Kalitlar: ${this.keysCollected}/${TOTAL_KEYS} · Karta: ${this.cardCollected ? '\u2713' : '\u2014'}` +
-          ` · Podstansiya: ${this.substationOn ? '\u2713' : '\u2014'}` +
-          ` · Qaydlar: ${this.notesCollected}/${TOTAL_NOTES}` +
-          ` · Xonalar: ${this.visitedRooms.size}/${this.mapInfo?.rooms.length ?? 0}`;
+        stats.textContent = t('over.stats', {
+          keys: this.keysCollected,
+          total: TOTAL_KEYS,
+          card: this.cardCollected ? '\u2713' : '\u2014',
+          power: this.substationOn ? '\u2713' : '\u2014',
+          notes: this.notesCollected,
+          notesTotal: TOTAL_NOTES,
+          rooms: this.visitedRooms.size,
+          roomsTotal: this.mapInfo?.rooms.length ?? 0,
+        });
       }
 
       this.gameoverScreen?.classList.remove('hidden');
@@ -1837,19 +2935,24 @@ export class Game {
 
     const seconds = Math.floor(this.elapsed);
     const timeEl = document.getElementById('win-time');
-    if (timeEl) timeEl.textContent = `Vaqt: ${this.formatTime(seconds)}`;
+    if (timeEl) timeEl.textContent = t('win.time', { time: this.formatTime(seconds) });
 
     const stats = document.getElementById('win-stats');
     if (stats) {
       const ending =
         this.notesCollected >= TOTAL_NOTES
-          ? 'Endi hammasi ma\'lum: Protokol 7 ni imzolagan odam o\'zi imzo edi. Siz uni yaratdingiz, va u sizni eslab qoldi. Darvoza ochiq, yomg\'ir tugadi — lekin u hali ham devorlar ichida turibdi.'
-          : `Siz ${TOTAL_NOTES - this.notesCollected} ta qaydni o'qimadingiz. Haqiqat shu devorlarda qoldi.`;
-      stats.textContent =
-        `${ending} · Qaydlar: ${this.notesCollected}/${TOTAL_NOTES}` +
-        ` · Kartalar: ${this.cardCollected ? '\u2713' : '\u2014'}/1 · Podstansiya: ${this.substationOn ? '\u2713' : '\u2014'}` +
-        ` · Xonalar: ${this.visitedRooms.size}/${this.mapInfo?.rooms.length ?? 0}` +
-        ` · Eng yaxshi vaqt: ${this.formatTime(this.saveBestTime(seconds))}`;
+          ? t('win.notesAll')
+          : t('win.notesMissed', { missed: TOTAL_NOTES - this.notesCollected });
+      stats.textContent = t('win.stats', {
+        ending,
+        notes: this.notesCollected,
+        notesTotal: TOTAL_NOTES,
+        card: this.cardCollected ? '\u2713' : '\u2014',
+        power: this.substationOn ? '\u2713' : '\u2014',
+        rooms: this.visitedRooms.size,
+        roomsTotal: this.mapInfo?.rooms.length ?? 0,
+        best: this.formatTime(this.saveBestTime(seconds)),
+      });
     }
 
     this.winScreen?.classList.remove('hidden');
@@ -1932,4 +3035,70 @@ export class Game {
     }
     return false;
   }
+
+  // --- Language & orientation ---------------------------------------------
+
+  /**
+   * Applies the stored language, wires every language picker and keeps the live
+   * HUD in step when the player switches language mid-run.
+   */
+  private installLanguageUI(): void {
+    applyTranslations();
+    this.refreshLanguageButtons();
+
+    const pickers = Array.from(document.querySelectorAll<HTMLButtonElement>('.lang-btn'));
+    for (const button of pickers) {
+      button.addEventListener('click', () => {
+        const code = button.dataset.lang;
+        if (code === 'uz' || code === 'en' || code === 'ru') setLanguage(code);
+      });
+    }
+
+    onLanguageChange(() => this.onLanguageChanged());
+  }
+
+  /** Highlights the active language on every picker (menu and pause menu). */
+  private refreshLanguageButtons(): void {
+    const current = getLanguage();
+    for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>('.lang-btn'))) {
+      button.classList.toggle('active', button.dataset.lang === current);
+    }
+  }
+
+  /** Redraws everything that was painted before the language changed. */
+  private onLanguageChanged(): void {
+    this.refreshLanguageButtons();
+    this.updateObjective();
+
+    // Blood scrawls are baked into canvases, so they are repainted in place
+    // rather than rebuilt with the level.
+    if (this.mapInfo) relocalizeWallTexts(this.mapInfo);
+
+    const room = this.mapInfo?.rooms[this.currentRoomIndex];
+    if (room) {
+      if (this.roomBannerName) this.roomBannerName.textContent = L(room.name);
+      if (this.roomBannerSubtitle) this.roomBannerSubtitle.textContent = L(room.subtitle);
+    }
+    if (this.stairFloorName) this.stairFloorName.textContent = floorName(this.currentFloor);
+  }
+
+  /**
+   * Phones held the wrong way get a full-screen card instead of a squashed HUD.
+   * Landscape is the only layout the touch controls are designed for.
+   */
+  private installRotateGuard(): void {
+    const overlay = document.getElementById('rotate-overlay');
+    if (!overlay) return;
+
+    const sync = () => {
+      const portrait = this.isPortraitBlocked();
+      overlay.classList.toggle('hidden', !portrait);
+      if (portrait) void this.lockLandscape();
+    };
+
+    sync();
+    window.addEventListener('resize', sync);
+    window.addEventListener('orientationchange', sync);
+  }
+
 }

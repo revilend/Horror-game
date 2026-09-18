@@ -1,0 +1,40 @@
+/*
+ * Floating joystick — built by Player.setupMobileTouch().
+ *
+ * The wrapper is what follows the thumb (Player sets its left/top), and it is
+ * invisible until a thumb is actually on the screen: an always-on ring used to
+ * sit over the top-left meters and read as a stray UI artefact.
+ */
+#dynamic-joystick {
+  position: fixed;
+  z-index: 25;
+  width: 110px;
+  height: 110px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+}
+
+#dj-base {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(20, 20, 30, 0.55);
+  border: 3px solid rgba(255, 200, 120, 0.75);
+  box-shadow: 0 0 22px rgba(255, 171, 46, 0.35), inset 0 0 16px rgba(255, 255, 255, 0.05);
+}
+
+#dj-stick {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin-left: -23px;
+  margin-top: -23px;
+  border-radius: 50%;
+  background: rgba(255, 220, 160, 0.55);
+  border: 3px solid rgba(255, 200, 120, 0.8);
+  box-shadow: 0 0 14px rgba(255, 171, 46, 0.4);
+  will-change: transform;
+}

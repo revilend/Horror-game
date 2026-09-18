@@ -7,7 +7,7 @@
  *   - Everything else (Vite's content-hashed bundles, icons, fonts) is
  *     cache-first, because a changed file always gets a new name.
  */
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = `asylum-shell-${VERSION}`;
 const ASSET_CACHE = `asylum-assets-${VERSION}`;
 const FONT_CACHE = `asylum-fonts-${VERSION}`;

@@ -1,4 +1,5 @@
 import { CELL, MapInfo } from './World';
+import { L, type Localized } from './i18n';
 
 /**
  * A small corner map that shows only the player's immediate surroundings.
@@ -18,20 +19,47 @@ export const WINDOW_COLS = 17;
 export const WINDOW_ROWS = 11;
 
 interface LevelBand {
-  name: string;
-  sub: string;
+  name: Localized;
+  sub: Localized;
   row1: number;
   row2: number;
 }
 
+/**
+ * One band per elevator deck, so the map's floor label and the HUD's location
+ * line always agree - and both follow the language the player picked.
+ */
 const LEVELS: LevelBand[] = [
-  { name: 'TASHQI HUDUD', sub: 'hovli va darvoza', row1: 0, row2: 14 },
-  { name: '1-QAVAT', sub: 'qabulxona', row1: 15, row2: 21 },
-  { name: 'OPERATSIYA', sub: 'jarrohlik qavati', row1: 22, row2: 28 },
-  { name: 'PODVAL', sub: 'morgniy va arxiv', row1: 29, row2: 33 },
-  { name: '2-QAVAT', sub: 'bosh shifokor', row1: 34, row2: 43 },
-  { name: 'CHUQUR PODVAL', sub: 'laboratoriya 7', row1: 44, row2: 51 },
-  { name: '3-QAVAT', sub: 'izolyator', row1: 52, row2: 57 },
+  {
+    name: { uz: 'TOM', en: 'ROOFTOP', ru: 'КРЫША' },
+    sub: { uz: 'hovli va darvoza', en: 'yard and gate', ru: 'двор и ворота' },
+    row1: 0,
+    row2: 14,
+  },
+  {
+    name: { uz: '1-QAVAT', en: 'FLOOR 1', ru: '1 ЭТАЖ' },
+    sub: { uz: 'qabulxona', en: 'reception', ru: 'приёмная' },
+    row1: 15,
+    row2: 33,
+  },
+  {
+    name: { uz: '2-QAVAT', en: 'FLOOR 2', ru: '2 ЭТАЖ' },
+    sub: { uz: 'palatalar', en: 'patient wards', ru: 'палаты' },
+    row1: 34,
+    row2: 43,
+  },
+  {
+    name: { uz: 'B1 PODVAL', en: 'B1 BASEMENT', ru: 'Б1 ПОДВАЛ' },
+    sub: { uz: 'qozonxona va morgniy', en: 'boiler room and morgue', ru: 'котельная и морг' },
+    row1: 44,
+    row2: 49,
+  },
+  {
+    name: { uz: '3-QAVAT', en: 'FLOOR 3', ru: '3 ЭТАЖ' },
+    sub: { uz: 'izolyator', en: 'isolation ward', ru: 'изолятор' },
+    row1: 50,
+    row2: 57,
+  },
 ];
 
 export interface MinimapState {
@@ -350,9 +378,10 @@ export class Minimap {
     // --- Which floor am I on? ----------------------------------------------
     const playerRow = Math.round(row);
     const band = LEVELS.find((level) => playerRow >= level.row1 && playerRow <= level.row2) ?? LEVELS[0];
-    if (this.levelLabel.textContent !== band.name) {
-      this.levelLabel.textContent = band.name;
-      this.subLabel.textContent = band.sub;
+    const name = L(band.name);
+    if (this.levelLabel.textContent !== name) {
+      this.levelLabel.textContent = name;
+      this.subLabel.textContent = L(band.sub);
     }
   }
 }

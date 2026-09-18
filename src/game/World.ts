@@ -9,7 +9,9 @@ import {
   createElectroChair,
   createFuseMesh,
   createHospitalBed,
+  createInstrumentTray,
   createIVStand,
+  createPillBottles,
   createIsolationBed,
   createKitchenCounter,
   createLockerProp,
@@ -25,20 +27,51 @@ import {
   createCouch,
 } from './PuzzleProps';
 import {
+  addBloodPuddle,
+  addCeilingDuct,
+  addPatientChart,
+  addPillBottleCluster,
+  addSeveredCable,
+  addSteamPipeRun,
+  addTippedInstrumentTray,
+} from './SetDressing';
+import { L, t, type Localized } from './i18n';
+import { WALL_TEXTS } from './notes';
+import { ROOM_META, type RoomMeta } from './rooms';
+import {
+  ELEVATOR_COL,
+  ELEVATOR_DECKS,
+  createElevator,
+  type ElevatorHandle,
+} from './Elevator';
+import {
+  createHideLocker,
+  createSearchDesk,
+  createSwingDoor,
+  seatDoor,
+  type DoorFixture,
+  type DrawerFixture,
+  type DrawerLoot,
+  type LockerFixture,
+} from './Fixtures';
+import {
   createAsphaltTexture,
   createBloodTextTexture,
   createBloodTexture,
   createCeilingTexture,
+  createChartTexture,
   createDirtTexture,
   createDoorTexture,
+  createDuctTexture,
   createFloorTexture,
   createOuterWallTexture,
   createWallTexture,
+  paintBloodText,
 } from './Textures';
 
 const CELL = 4; // cell size in world units
 const WALL_H = 3.5;
-const WALL_THICK = 0.2;
+const WALL_THICK = 0.2; // wall slab thickness
 const EYE_HEIGHT = 1.7;
 
 /* =========================================================================
@@ -135,111 +168,67 @@ const LAYOUT = [
 export const OUTDOOR_ROWS = 15;
 const OUTDOOR_END = OUTDOOR_ROWS - 1;
 
-/** Stairwell cells -- the two openings in the stairwell wall (row 35). */
-const STAIR_CELLS = [
-  { row: 35, col: 5 },
-  { row: 35, col: 20 },
-];
-
 /**
- * Which floor a row belongs to, used by the minimap and the stair transition.
- * Grounds = -1 (outdoor), then 1-4 for each indoor level.
+ * Which elevator deck a row belongs to: an index into ELEVATOR_DECKS.
+ *
+ * The asylum is laid out as bands of rows, one band per floor, so the row a
+ * player is standing on is the whole answer. Returns -1 when off the map.
  */
 export function floorAt(row: number): number {
-  if (row < OUTDOOR_ROWS) return -1;
-  if (row <= 34) return 1;
-  if (row <= 36) return 1;
-  if (row <= 42) return 2;
-  if (row <= 48) return 3;
-  if (row <= 54) return 4;
-  return 4;
+  if (row < 0 || row >= ROWS) return -1;
+  if (row < OUTDOOR_ROWS) return 4; // rooftop: the grounds and the escape gate
+  if (row <= 33) return 1; // 1F clinic lobby
+  if (row <= 43) return 2; // 2F patient wards
+  if (row <= 49) return 0; // B1 basement
+  return 3; // 3F director wing
 }
 
-/** Floor names for UI display. */
+/** Localized name of the deck with that index, for the HUD. */
 export function floorName(floor: number): string {
-  switch (floor) {
-    case -1: return "HOVLI";
-    case 1: return "1-QAVAT";
-    case 2: return "2-QAVAT";
-    case 3: return "CHUQUR PODVAL";
-    case 4: return "3-QAVAT";
-    default: return "";
-  }
+  const deck = ELEVATOR_DECKS[floor];
+  return deck ? L(deck.name) : '';
 }
 
 
 const COLS = 28;
 const ROWS = 58;
 
-interface RoomMeta {
-  name: string;
-  subtitle: string;
+/**
+ * The moving parts: the lift, the doors, the desk drawers and the lockers.
+ * They are built inside the level builder but handed back through the wrapper
+ * below, which keeps the builder's return literal free of live objects.
+ */
+interface WorldFixtures {
+  elevator: ElevatorHandle;
+  elevatorCol: number;
+  doors: DoorFixture[];
+  desks: DrawerFixture[];
+  lockers: LockerFixture[];
 }
 
-const ROOM_META: Record<string, RoomMeta> = {
-  // Hospital - first floor
-  a: { name: 'QABULXONA', subtitle: 'Chiqish eshigi shu yerda' },
-  b: { name: 'TELEFON MARKAZI', subtitle: 'Simlar uzilgan — faqat shitirlash eshitiladi' },
-  c: { name: 'HAMSHIRA XONASI', subtitle: 'Kimdir hozirgina chiqib ketgan' },
-  d: { name: 'XONA 201', subtitle: 'Karavotlar bo\u2018sh emas' },
-  e: { name: 'XONA 202', subtitle: 'Devorda tirnoq izlari' },
-  f: { name: 'OMBORXONA', subtitle: 'Eshik tashqaridan qulflangan' },
-  // Hospital - surgical floor
-  g: { name: 'KUTUBXONA', subtitle: 'Har bir bemorning ismi yozilgan' },
-  h: { name: 'OPERATSIYA XONASI', subtitle: 'Qon hali qurimagan' },
-  i: { name: 'INTENSIV TERAPIYA', subtitle: 'Monitorlar jim' },
-  j: { name: 'RENTGEN XONASI', subtitle: 'Suratlar devorga mixlangan' },
-  k: { name: 'LABORATORIYA', subtitle: 'Namunalar hali ham sovuq' },
-  m: { name: 'GENERATOR XONASI', subtitle: 'Elektr shu yerdan boshqariladi' },
-  // Hospital - basement
-  n: { name: 'XONA 101', subtitle: 'Kundaliklar yirtilgan' },
-  o: { name: 'MORGNIY', subtitle: 'Bu yerda hamma narsa sovuq' },
-  p: { name: 'ARXIV', subtitle: 'Hujjatlar yoqib yuborilgan' },
-  q: { name: 'DUSH XONASI', subtitle: 'Kranlardan qon oqadi' },
-  r: { name: 'OSHXONA', subtitle: 'Idishlar hali yuvilmagan' },
-  s: { name: 'XONA 102', subtitle: 'Deraza tashqarisida hech narsa yo\u2018q' },
-  // The grounds
-  t: { name: 'PODSTANSIYA', subtitle: 'Asosiy darvoza quvvati shu yerdan o\u2018tadi' },
-  u: { name: 'DARVOZA MAYDONI', subtitle: 'Qochish yo\u2018li shu yerda tugaydi' },
-  v: { name: 'QABRISTON', subtitle: 'Kasalxona o\u2018liklarini shu yerga ko\u2018mishardi' },
-  w: { name: 'HOVLI', subtitle: 'Kasalxona ortidagi bo\u2018sh hovli' },
-  x: { name: 'AVTOTURARGOH', subtitle: 'Tez yordam mashinasi hali ham shu yerda' },
-  y: { name: 'QO\u2018RIQXONA', subtitle: 'Chiroq yonib turgan edi — kim yoqqan?' },
-  z: { name: 'KREMATORIY', subtitle: 'Bu yerda hech narsa qolmadi' },
-  // Hospital - second floor (IKKINCHI QAVAT)
-  A: { name: 'BOSH SHIFOKOR XONASI', subtitle: 'Protokol 7 shu yerda imzolangan' },
-  B: { name: 'KIR YUVISH XONASI', subtitle: 'Mashinada hali ham qonli kiyimlar' },
-  C: { name: 'OSHXONA', subtitle: 'Ovqat hech qachon tarqatilmagan' },
-  D: { name: 'BOLALAR PALATASI', subtitle: 'O\u2018yinchoqlar devor bo\u2018ylab tizilgan' },
-  E: { name: 'KUZATUV XONASI', subtitle: 'Bir tomonlama oyna — kim kimni kuzatgan?' },
-  F: { name: 'IBODATXONA', subtitle: 'Xoch teskari osilgan' },
-  G: { name: 'FIZIOTERAPIYA', subtitle: 'Tayanchlar hali ham shu yerda' },
-  H: { name: 'STOMATOLOGIYA XONASI', subtitle: 'Kreslo qonli' },
-  I: { name: 'KO\u2018Z KLINIKASI', subtitle: 'Ko\u2018zoynaklar javonda qolgan' },
-  J: { name: 'TERAPIYA XONASI', subtitle: 'Kundalik daftarlar yirtilgan' },
-  K: { name: 'ANESTEZIYA XONASI', subtitle: 'Gaz ballonlari bo\u2018sh' },
-  L: { name: 'OMBORXONA 2', subtitle: 'Yopiq qutilar — hech kim ochmagan' },
-  // Hospital - deep basement (CHUQUR PODVAL)
-  M: { name: 'QOZONXONA', subtitle: 'Qozonlar hali ham issiq' },
-  N: { name: 'NASOS XONASI', subtitle: 'Quvurlar titraydi' },
-  O: { name: 'TUNEL', subtitle: 'Bu yo\u2018l qayerga olib boradi?' },
-  P: { name: 'LABORATORIYA 7', subtitle: 'Namunalar hali ham tirik' },
-  Q: { name: 'INKUBATOR XONASI', subtitle: 'Kichkina qo\u2018llar shisha ortida' },
-  R: { name: 'MORGNIY 2', subtitle: 'O\u2018ttiz yetti tortma — biri ochiq' },
-  // Hospital - third floor (UCHINCHI QAVAT)
-  S: { name: 'IZOLYATOR', subtitle: 'Bu xonada hech kim bir kundan ortiq qolmagan' },
-  T: { name: 'ELEKTROTERAPIYA', subtitle: 'Kresloda hali ham qayish bog\u2018langan' },
-  U: { name: 'GIDROTERAPIYA', subtitle: 'Hammomdagi suv qizil' },
-  V: { name: 'XODIMLAR XONASI', subtitle: 'Choy hali ham iliq' },
-  W: { name: 'KONSILIUM XONASI', subtitle: 'Yig\u2018ilish bayonnomasi oxirigacha yozilgan' },
-  X: { name: 'TOMGA CHIQISH', subtitle: 'Eshik ochiq — tashqarida faqat yomg\u2018ir' },
-};
+/** Everything the level builder lays out on its own. */
+type BaseMapInfo = Omit<MapInfo, keyof WorldFixtures>;
+
+/** Handed from buildWorldBase up to buildWorld while a world is being built. */
+let pendingFixtures: WorldFixtures | null = null;
+
+/**
+ * Retired. The broken stairwell that used to link the floors was replaced by
+ * the cage elevator, so there is nothing left to climb between decks; the
+ * binding is kept because the module's export list still mentions it.
+ */
+const STAIR_CELLS: Array<{ row: number; col: number }> = [];
 
 /** Room letters that sit outside the building's walls. */
 const OUTDOOR_ROOM_CHARS = new Set(['t', 'u', 'v', 'w', 'x', 'y', 'z']);
 
 export interface RoomInfo extends RoomMeta {
   index: number;
+  /**
+   * The LAYOUT character for this room. Stable across languages, which is what
+   * makes it the right key for lookups like the scripted-scares table.
+   */
+  key: string;
   row1: number;
   row2: number;
   col1: number;
@@ -253,7 +242,7 @@ export interface RoomInfo extends RoomMeta {
  * ---------------------------------------------------------------------- */
 
 /** Reception, behind the door that used to be the finish line. */
-const PLAYER_SPAWN = { row: 28, col: 5 };
+const PLAYER_SPAWN = { row: 28, col: 10 };
 const MONSTER_SPAWN = { row: 17, col: 25 };
 /** The hospital's reception door - now a checkpoint, not the ending. */
 const EXIT_CELL = { row: 16, col: 2 };
@@ -270,6 +259,40 @@ const KEY_CELLS = [
   { row: 24, col: 7 }, // OPERATSIYA XONASI
   { row: 31, col: 8 }, // MORGNIY
   { row: 31, col: 16 }, // DUSH XONASI - behind the boarded door
+];
+
+/**
+ * Desks the player can search.
+ *
+ * The first three sit exactly on KEY_CELLS: the ward keys are no longer lying
+ * on the floor, they are shut in a drawer, so they have to be found by working
+ * the desk. The rest hold supplies. `yaw` picks which way the drawer faces.
+ */
+const SEARCH_DESK_CELLS: Array<{ row: number; col: number; yaw: number; loot: DrawerLoot }> = [
+  { row: 24, col: 7, yaw: 0, loot: 'key' },
+  { row: 31, col: 8, yaw: Math.PI / 2, loot: 'key' },
+  { row: 31, col: 16, yaw: 0, loot: 'key' },
+  { row: 23, col: 8, yaw: -Math.PI / 2, loot: 'battery' },
+  // Store room 2 and Room 102: inside the room, never in the doorway, so a
+  // desk can never narrow an entrance the player has to squeeze through.
+  { row: 41, col: 24, yaw: 0, loot: 'bottle' },
+  { row: 52, col: 8, yaw: Math.PI, loot: 'battery' },
+  { row: 31, col: 24, yaw: 0, loot: 'bottle' },
+];
+
+/**
+ * Steel wardrobes to hide in. Each sits against a corridor wall, `dz`/`dx`
+ * being the offset from the cell centre that tucks it against that wall.
+ */
+const LOCKER_CELLS: Array<{ row: number; col: number; dz: number; dx: number; yaw: number }> = [
+  { row: 20, col: 4, dz: -1.35, dx: 0, yaw: 0 },
+  { row: 20, col: 12, dz: -1.35, dx: 0, yaw: 0 },
+  { row: 28, col: 22, dz: -1.35, dx: 0, yaw: 0 },
+  { row: 34, col: 6, dz: -1.35, dx: 0, yaw: 0 },
+  { row: 44, col: 12, dz: -1.35, dx: 0, yaw: 0 },
+  { row: 50, col: 8, dz: -1.35, dx: 0, yaw: 0 },
+  { row: 7, col: 11, dz: -1.35, dx: 0, yaw: 0 },
+  { row: 1, col: 8, dz: -1.35, dx: 0, yaw: 0 },
 ];
 
 /* -------------------------------------------------------------------------
@@ -337,25 +360,6 @@ const NOTE_CELLS = [
 ];
 
 /** Blood scrawls. `face` is the side of the cell the wall is on. */
-const WALL_TEXTS: Array<{ row: number; col: number; face: 'north' | 'south' | 'east' | 'west'; text: string }> = [
-  { row: 22, col: 8, face: 'north', text: 'SIZ QILDINGIZ' },
-  { row: 22, col: 25, face: 'north', text: 'OZOD BO\u2018LMADIM' },
-  { row: 30, col: 8, face: 'north', text: '\u211637' },
-  { row: 30, col: 16, face: 'north', text: 'YANA QAYTDINGMI' },
-  // Outside, painted on the hospital's own back wall
-  { row: 14, col: 6, face: 'south', text: 'CHIQISH YO\u2018Q' },
-  { row: 14, col: 20, face: 'south', text: 'U TASHQARIDA HAM BOR' },
-  { row: 10, col: 20, face: 'west', text: 'KUYDI' },
-  { row: 4, col: 24, face: 'east', text: 'DARVOZA SIZNI KUTADI' },
-  // Second floor & deep basement
-  { row: 36, col: 1, face: 'north', text: 'PROTOKOL 7' },
-  { row: 46, col: 3, face: 'east', text: 'YIGIRMA YETTINCHI' },
-  { row: 47, col: 23, face: 'west', text: 'MENI QIDIRMANG' },
-  // Third floor
-  { row: 52, col: 1, face: 'north', text: 'UCHINCHI QAVAT' },
-  { row: 56, col: 21, face: 'south', text: 'TOM YOPILGAN' },
-];
-
 /** Lamp posts along the fence line; the substation turns them on. */
 const LAMP_CELLS = [
   { row: 1, col: 1 },
@@ -465,6 +469,45 @@ export interface MapInfo {
    * raycast against - these circles stand in for the furniture instead.
    */
   colliders: Array<{ x: number; z: number; r: number }>;
+  /**
+   * The blood scrawls, with their texture and their untranslated text. Blood
+   * writing is baked into a canvas, so switching language repaints these
+   * canvases in place rather than rebuilding the level.
+   */
+  wallTexts: WallTextTexture[];
+
+  /** Vintage 5-stop iron-cage elevator. */
+  elevator: ElevatorHandle;
+  /** Column the shaft is cut into; every landing shares it. */
+  elevatorCol: number;
+  /** One swinging leaf per doorway, with the box that blocks it while shut. */
+  doors: DoorFixture[];
+  /** Desks whose drawers slide open, three of them holding a ward key. */
+  desks: DrawerFixture[];
+  /** Steel wardrobes the player can climb into and hide. */
+  lockers: LockerFixture[];
+}
+
+/** One wall scrawl: the texture to repaint and the text it should carry. */
+export interface WallTextTexture {
+  texture: THREE.CanvasTexture;
+  text: Localized;
+}
+
+/**
+ * Repaints every wall scrawl in the current language.
+ * Called by the game when the player changes language mid-session.
+ */
+export function relocalizeWallTexts(map: MapInfo): void {
+  for (const entry of map.wallTexts) {
+    const canvas = entry.texture.image as HTMLCanvasElement | undefined;
+    const ctx = canvas?.getContext?.('2d');
+    if (!canvas || !ctx) continue;
+    // Same canvas, same texture object: the merged prop meshes keep pointing at
+    // it, so nothing in the scene graph has to be touched.
+    paintBloodText(ctx, canvas.width, canvas.height, L(entry.text));
+    entry.texture.needsUpdate = true;
+  }
 }
 
 const ROOM_CHAR = /^[a-zA-Z]$/;
@@ -523,7 +566,7 @@ function parseLayout(): ParsedPlan {
     if (!meta) throw new Error(`Room '${char}' has no ROOM_META entry`);
     const box = bounds.get(char)!;
     indexByChar.set(char, index);
-    rooms.push({ index, ...meta, ...box, outdoor: OUTDOOR_ROOM_CHARS.has(char) });
+    rooms.push({ index, key: char, ...meta, ...box, outdoor: OUTDOOR_ROOM_CHARS.has(char) });
   });
 
   for (let row = 0; row < ROWS; row++) {
@@ -603,7 +646,7 @@ function findRoomDoors(
   rooms: RoomInfo[],
   roomChar: string
 ): Array<{ row: number; col: number }> {
-  const room = rooms.find((entry) => entry.name === ROOM_META[roomChar]?.name);
+  const room = rooms.find((entry) => entry.key === roomChar);
   if (!room) throw new Error(`Cannot find room '${roomChar}' to board up`);
 
   const out: Array<{ row: number; col: number }> = [];
@@ -650,7 +693,24 @@ export function cellToWorld(row: number, col: number, y = EYE_HEIGHT): THREE.Vec
   return new THREE.Vector3(col * CELL, y, row * CELL);
 }
 
+/**
+ * Lays out St Jude's Asylum and wires up its vintage cage elevator.
+ */
 export function buildWorld(scene: THREE.Scene): MapInfo {
+  pendingFixtures = null;
+  const base = buildWorldBase(scene);
+  const fixtures = pendingFixtures;
+  pendingFixtures = null;
+  if (!fixtures) throw new Error('buildWorld: the fixtures were never constructed');
+  // Assigned rather than spread: the builder's return literal is large, and a
+  // plain union of the two keeps the shape obvious at the call site.
+  const map = base as MapInfo;
+  Object.assign(map, fixtures);
+  return map;
+}
+
+/** Builds the level itself; `buildWorld` attaches the lift to the result. */
+function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   const { grid, roomIndexByCell, rooms, indexByChar } = parseLayout();
 
   // Entity cells override the base terrain values (still walkable)
@@ -661,6 +721,7 @@ export function buildWorld(scene: THREE.Scene): MapInfo {
   const CELL_BREAKER = 6;
   const CELL_CARD = 7;
   const CELL_SUBSTATION = 8;
+  const CELL_ELEVATOR = 9;
 
   assertReachable(grid, [
     [MONSTER_SPAWN.row, MONSTER_SPAWN.col, 'Monster spawn'],
@@ -703,6 +764,30 @@ export function buildWorld(scene: THREE.Scene): MapInfo {
   // The crowbar has to be reachable *with the door shut*, or the run is
   // unwinnable. Failing loudly here beats shipping a dead end.
   assertReachable(grid, [[CROWBAR_CELL.row, CROWBAR_CELL.col, 'Crowbar (door boarded up)']]);
+
+  // --- Cut the elevator shaft openings ------------------------------------
+  // Every deck recesses the cage into one wall cell directly above its
+  // corridor, so the doorway into the lift lands in the same place on every
+  // floor. Opening the cell here, before the walls are built, leaves a niche
+  // with three walls and an open front where the gate is.
+  // NOTE: cage rows are walls (#) in the plan, so we write directly into the
+  // grid rather than going through placeCell, which rejects wall cells.
+  for (const deck of ELEVATOR_DECKS) {
+    const r = deck.cageRow;
+    const c = ELEVATOR_COL;
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) {
+      throw new Error(`Elevator shaft ${deck.id} at (${r},${c}) is outside the plan`);
+    }
+    grid[r][c] = CELL_ELEVATOR;
+  }
+  assertReachable(
+    grid,
+    ELEVATOR_DECKS.map((deck): [number, number, string] => [
+      deck.cageRow,
+      ELEVATOR_COL,
+      `Elevator shaft ${deck.id}`,
+    ]),
+  );
 
   // --- Materials ---------------------------------------------------------
   const wallTexture = createWallTexture();
@@ -771,6 +856,53 @@ export function buildWorld(scene: THREE.Scene): MapInfo {
     emissiveIntensity: 0.05,
     roughness: 0.5,
     metalness: 0.4,
+  });
+
+  // --- Elevator materials ------------------------------------------------
+  const darkMetalMat = new THREE.MeshStandardMaterial({
+    color: 0x151618,
+    roughness: 0.55,
+    metalness: 0.85,
+  });
+  const railMat = new THREE.MeshStandardMaterial({
+    color: 0x2a2c30,
+    roughness: 0.5,
+    metalness: 0.9,
+  });
+  const brassMat = new THREE.MeshStandardMaterial({
+    color: 0x9a7b33,
+    roughness: 0.35,
+    metalness: 0.82,
+  });
+  const amberMat = new THREE.MeshStandardMaterial({
+    color: 0xffb347,
+    emissive: 0xff8a1a,
+    emissiveIntensity: 0,
+    roughness: 0.45,
+    metalness: 0.25,
+  });
+  const redMat = new THREE.MeshStandardMaterial({
+    color: 0x8a1a1a,
+    emissive: 0xff2a14,
+    emissiveIntensity: 0.4,
+    roughness: 0.5,
+    metalness: 0.4,
+  });
+  const greenMat = new THREE.MeshStandardMaterial({
+    color: 0x1a4a2a,
+    emissive: 0x33ff66,
+    emissiveIntensity: 0.25,
+    roughness: 0.5,
+    metalness: 0.3,
+  });
+  const lightMat = new THREE.MeshStandardMaterial({
+    color: 0xfff3d0,
+    emissive: 0xffd37a,
+    emissiveIntensity: 0,
+    roughness: 0.5,
+    metalness: 0,
+    transparent: true,
+    opacity: 0.8,
   });
 
   // --- Item materials -----------------------------------------------------
@@ -848,6 +980,41 @@ export function buildWorld(scene: THREE.Scene): MapInfo {
     emissive: 0xfff2d2,
     emissiveIntensity: 0.12,
     roughness: 0.4,
+  });
+
+  // --- Set-dressing materials (industrial & medical detail pass) ----------
+  // Ribbed galvanised ducting: brushed metal, so it catches the torch beam.
+  const ductMat = new THREE.MeshStandardMaterial({
+    map: createDuctTexture(),
+    color: 0x9aa0a6,
+    roughness: 0.42,
+    metalness: 0.78,
+  });
+  // Loose patient charts scattered across the floors.
+  const chartMat = new THREE.MeshStandardMaterial({
+    map: createChartTexture(),
+    roughness: 0.95,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  });
+  // Wet blood pools the flashlight reflects off — glossy, unlike the decals.
+  const bloodPuddleMat = new THREE.MeshStandardMaterial({
+    color: 0x3a0407,
+    roughness: 0.07,
+    metalness: 0.45,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+  });
+  // Dark brown glass for the medicine bottles.
+  const bottleMat = new THREE.MeshStandardMaterial({
+    color: 0x4a2a18,
+    roughness: 0.25,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.8,
   });
 
   const breakerMat = new THREE.MeshStandardMaterial({
@@ -950,7 +1117,54 @@ export function buildWorld(scene: THREE.Scene): MapInfo {
   addWallMesh(indoorWallGeometries, wallMat);
   addWallMesh(outdoorWallGeometries, outerWallMat);
 
-  // --- Doorways ----------------------------------------------------------
+  // --- Fixtures: doors, desk drawers and lockers --------------------------
+  // Declared up here because the lift registration below hands all of them to
+  // the game in one object. They are filled in further down, once the doorway
+  // pass has worked out which cells are doorways.
+  const UP = new THREE.Vector3(0, 1, 0);
+  const doors: DoorFixture[] = [];
+  const desks: DrawerFixture[] = [];
+  const lockers: LockerFixture[] = [];
+
+  // Doors get their own material rather than sharing the merged prop bucket:
+  // they move, so they can never be baked into the static draw call.
+  const doorLeafMat = new THREE.MeshStandardMaterial({
+    map: createDoorTexture(),
+    roughness: 0.72,
+    metalness: 0.28,
+  });
+
+  // The reception door and the main gate are driven by the game itself, and
+  // the shower room's ways in are already boarded shut.
+  const managedDoorways = new Set<string>([
+    `${GATE_CELL.row}:${GATE_CELL.col}`,
+    `${EXIT_CELL.row}:${EXIT_CELL.col}`,
+  ]);
+  for (const cell of boardedCells) managedDoorways.add(`${cell.row}:${cell.col}`);
+
+  // --- The vintage iron-cage elevator -------------------------------------
+  // One cage, five landings. The cage sits in the niche cut above each deck's
+  // corridor and is re-seated at the destination part-way through the ride,
+  // so a single mesh serves the whole building.
+  const elevator = createElevator(
+    scene,
+    { iron: metalMat, darkIron: darkMetalMat, brass: brassMat, rust: rustMat },
+    CELL,
+  );
+  pendingFixtures = { elevator, elevatorCol: ELEVATOR_COL, doors, desks, lockers };
+
+  // The cage is solid: the player walks in through the gate and nowhere else.
+  // Three circles stand in for its back and corners, since the decorative
+  // meshes are merged and cannot be raycast against.
+  for (const deck of ELEVATOR_DECKS) {
+    const ecx = ELEVATOR_COL * CELL;
+    const ecz = deck.cageRow * CELL;
+    colliders.push({ x: ecx - 1.7, z: ecz, r: 0.5 });
+    colliders.push({ x: ecx + 1.7, z: ecz, r: 0.5 });
+    colliders.push({ x: ecx, z: ecz - 1.85, r: 1.05 });
+  }
+
+  // --- Hang every doorway ------------------------------------------------
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       if (LAYOUT[row][col] !== '+') continue;
@@ -958,7 +1172,92 @@ export function buildWorld(scene: THREE.Scene): MapInfo {
         (isOpen(grid, row - 1, col) || isOpen(grid, row + 1, col)) &&
         !(isOpen(grid, row, col - 1) || isOpen(grid, row, col + 1));
       addDoorFrame(props, col * CELL, row * CELL, vertical, metalMat);
+
+      if (managedDoorways.has(`${row}:${col}`)) continue;
+
+      const door = createSwingDoor(CELL, doorLeafMat, metalMat, vertical);
+      door.row = row;
+      door.col = col;
+      // A leaf is built spanning local +x from its hinge, so the base yaw is
+      // whatever turns that axis across the opening: 0 for a north-south
+      // passage, -90 degrees for an east-west one.
+      seatDoor(door, col * CELL, row * CELL, CELL, vertical ? 0 : -Math.PI / 2);
+      scene.add(door.hinge);
+      doors.push(door);
     }
+  }
+
+  // Desks. The drawer slides along the desk's own +z, so the yaw alone decides
+  // which way it opens.
+  const deskCellIndex = new Map<string, number>();
+  for (const spec of SEARCH_DESK_CELLS) {
+    const built = createSearchDesk(woodMat, metalMat);
+    built.group.position.set(spec.col * CELL, 0, spec.row * CELL);
+    built.group.rotation.y = spec.yaw;
+    scene.add(built.group);
+
+    deskCellIndex.set(`${spec.row}:${spec.col}`, desks.length);
+    desks.push({
+      row: spec.row,
+      col: spec.col,
+      group: built.group,
+      drawer: built.drawer,
+      slide: 0,
+      target: 0,
+      opened: false,
+      travel: new THREE.Vector3(0, 0, 1),
+      centre: new THREE.Vector3(spec.col * CELL, 1.0, spec.row * CELL),
+      loot: null,
+      lootKind: spec.loot,
+      lootIndex: -1,
+    });
+    colliders.push({ x: spec.col * CELL, z: spec.row * CELL, r: 0.8 });
+  }
+
+  // Supplies in the ordinary drawers. The ward keys are not built here: World
+  // still lays them out as floor pickups (KEY_CELLS is validated for
+  // reachability), and the game moves them into the matching drawer and
+  // re-scans the level at start-up. Doing it in one place keeps the two from
+  // ever disagreeing about where a key is.
+  for (const desk of desks) {
+    if (desk.lootKind === 'key') continue;
+    const loot =
+      desk.lootKind === 'battery'
+        ? createBatteryMesh(batteryMat, metalMat)
+        : createVialMesh(glassMat, metalMat);
+    loot.position.set(0, 0.58, 0.05);
+    loot.userData.isDrawerLoot = true;
+    desk.drawer.add(loot);
+    desk.loot = loot;
+  }
+
+  // Lockers, tucked against the wall so the corridor stays walkable.
+  for (const spec of LOCKER_CELLS) {
+    const built = createHideLocker(metalMat, rustMat);
+    const x = spec.col * CELL + spec.dx;
+    const z = spec.row * CELL + spec.dz;
+    built.group.position.set(x, 0, z);
+    built.group.rotation.y = spec.yaw;
+    scene.add(built.group);
+
+    const inside = built.inside.clone().applyAxisAngle(UP, spec.yaw).add(built.group.position);
+    const outside = built.outside.clone().applyAxisAngle(UP, spec.yaw).add(built.group.position);
+
+    lockers.push({
+      row: spec.row,
+      col: spec.col,
+      group: built.group,
+      door: built.door,
+      open: 0,
+      target: 0,
+      opened: false,
+      inside,
+      // Facing out of the vents: the player's forward is -z at yaw 0.
+      yaw: spec.yaw + Math.PI,
+      outside,
+      centre: new THREE.Vector3(x, 1.1, z),
+    });
+    colliders.push({ x, z, r: 0.6 });
   }
 
   // --- Indoor clutter, gore and fluorescent tubes ------------------------
@@ -999,6 +1298,34 @@ export function buildWorld(scene: THREE.Scene): MapInfo {
         if (Math.random() < (isCorridor ? 0.55 : 0.18)) {
           addCeilingTube(props, metalMat, tubeMat, cx, cz);
           tubeCount++;
+        }
+
+        // --- Industrial overheads & medical set dressing ---------------
+        if (isCorridor) {
+          const sides = openSidesAt(grid, row, col);
+          if (Math.random() < 0.22) {
+            addCeilingDuct(props, ductMat, rustMat, cx, cz, sides);
+          }
+          if (Math.random() < 0.18) {
+            addSteamPipeRun(props, metalMat, rustMat, cx, cz, sides);
+          }
+          if (Math.random() < 0.14) {
+            addSeveredCable(props, metalMat, cx, cz);
+          }
+          if (Math.random() < 0.14) {
+            addPatientChart(props, chartMat, cx, cz);
+          }
+          if (Math.random() < 0.09) {
+            addTippedInstrumentTray(props, metalMat, glassMat, cx, cz);
+          }
+          if (Math.random() < 0.1) {
+            addPillBottleCluster(props, bottleMat, metalMat, cx, cz);
+          }
+          if (Math.random() < 0.2) {
+            addBloodPuddle(props, bloodPuddleMat, cx, cz);
+          }
+        } else if (Math.random() < 0.14) {
+          addBloodPuddle(props, bloodPuddleMat, cx, cz);
         }
       }
     }
@@ -1109,8 +1436,13 @@ export function buildWorld(scene: THREE.Scene): MapInfo {
   }
 
   // --- Blood scrawls on walls -------------------------------------------
+  // The text is baked into a canvas, so the texture is kept around: a language
+  // change repaints the same canvas instead of rebuilding the level.
+  const wallTextTextures: WallTextTexture[] = [];
   for (const decal of WALL_TEXTS) {
-    addWallText(props, decal.row, decal.col, decal.face, createBloodTextTexture(decal.text));
+    const wallTexture = createBloodTextTexture(L(decal.text));
+    wallTextTextures.push({ texture: wallTexture, text: decal.text });
+    addWallText(props, decal.row, decal.col, decal.face, wallTexture);
   }
 
   // Blood pooled around the monster's lair
@@ -1274,6 +1606,7 @@ export function buildWorld(scene: THREE.Scene): MapInfo {
   scene.add(mergedProps);
 
   return {
+    wallTexts: wallTextTextures,
     grid,
     walls,
     floor,

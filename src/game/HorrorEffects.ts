@@ -1,9 +1,14 @@
 import * as THREE from 'three';
 import { createSkyTexture, createSoftDotTexture } from './Textures';
 
-const DUST_COUNT = 420;
+const DUST_COUNT = 680;
 const DUST_RADIUS = 26;
 const DUST_HEIGHT = 3.4;
+
+/** Fewer, fatter motes that twinkle - the ones that catch the torch beam. */
+const MOTE_COUNT = 150;
+const MOTE_RADIUS = 15;
+const BEAM_LENGTH = 7.5;
 
 const RAIN_COUNT = 1400;
 const RAIN_RADIUS = 24;
@@ -20,6 +25,8 @@ const RAIN_HEIGHT = 16;
 export class HorrorEffects {
   private scene: THREE.Scene;
   private ambientLight: THREE.AmbientLight;
+  /** Hard lower bound for ambient light - the room is never allowed to go flat black. */
+  private ambientFloor = 0;
   private flickerLights: THREE.PointLight[] = [];
   private fluorescents: THREE.MeshStandardMaterial[] = [];
   private fogDensity = 0.08;
@@ -41,6 +48,18 @@ export class HorrorEffects {
   private dust: THREE.Points | null = null;
   private dustSpeeds: Float32Array | null = null;
   private dustEnabled = true;
+
+  private motes: THREE.Points | null = null;
+  private moteSpeeds: Float32Array | null = null;
+
+  /** Fake volumetric beam: two nested additive cones parented to the camera. */
+  private beam: THREE.Group | null = null;
+  private beamMaterials: THREE.MeshBasicMaterial[] = [];
+  private beamTime = 0;
+
+  /** Fired when a fluorescent tube stutters, so the game can play the buzz. */
+  onFluorescentBuzz: (() => void) | null = null;
+  private buzzCooldown = 0;
 
   // --- Weather -----------------------------------------------------------
   private outdoors = false;
@@ -67,6 +86,7 @@ export class HorrorEffects {
 
     this.attachToScene();
     this.createDust();
+    this.createMotes();
     this.createRain();
   }
 
@@ -89,6 +109,7 @@ export class HorrorEffects {
   attachToScene(): void {
     if (!this.ambientLight.parent) this.scene.add(this.ambientLight);
     if (this.dust && !this.dust.parent) this.scene.add(this.dust);
+    if (this.motes && !this.motes.parent) this.scene.add(this.motes);
     if (this.rain && !this.rain.parent) this.scene.add(this.rain);
     if (!(this.scene.background instanceof THREE.Texture)) {
       this.scene.background = createSkyTexture();
@@ -139,7 +160,9 @@ export class HorrorEffects {
     if (this.flashlightTarget) camera.remove(this.flashlightTarget);
     if (this.fillLight) camera.remove(this.fillLight);
 
-    const flashlight = new THREE.SpotLight(0xfff4e0, 5.5, 44, Math.PI / 3.2, 0.35, 0.85);
+    // A wide penumbra plus a low decay gives the beam a soft, dusty edge that
+    // falls away gradually instead of ending in a hard circle.
+    const flashlight = new THREE.SpotLight(0xfff4e0, 5.5, 44, Math.PI / 3.2, 0.55, 0.85);
     flashlight.castShadow = true;
     flashlight.shadow.mapSize.width = 512;
     flashlight.shadow.mapSize.height = 512;
@@ -158,7 +181,68 @@ export class HorrorEffects {
     this.flashlight = flashlight;
     this.flashlightTarget = flashlight.target;
     this.fillLight = fill;
+
+    this.createBeam(camera);
     return flashlight;
+  }
+
+  /**
+   * The volumetric halo: two open cones of additive light parented to the
+   * camera, bright at the lens and dissolving into the fog. It costs two draw
+   * calls and reads as a real beam in a dusty corridor, which no amount of
+   * spotlight tuning alone can fake.
+   */
+  private createBeam(camera: THREE.PerspectiveCamera): void {
+    if (this.beam) camera.remove(this.beam);
+    this.beamMaterials = [];
+
+    const beam = new THREE.Group();
+    const layers: Array<{ radius: number; length: number; alpha: number }> = [
+      { radius: 2.5, length: BEAM_LENGTH, alpha: 0.2 },
+      { radius: 4.0, length: BEAM_LENGTH * 0.72, alpha: 0.09 },
+    ];
+
+    for (const layer of layers) {
+      const geometry = new THREE.ConeGeometry(layer.radius, layer.length, 18, 5, true);
+      // Point the cone down -Z with its apex at the lens
+      geometry.rotateX(Math.PI / 2);
+      geometry.translate(0, 0, -layer.length / 2);
+
+      // Fade the beam out towards the far end, and add a little noise so the
+      // cone does not read as a hard-edged solid
+      const position = geometry.getAttribute('position');
+      const colors = new Float32Array(position.count * 4);
+      for (let i = 0; i < position.count; i++) {
+        const z = position.getZ(i); // 0 at the lens, -length at the far end
+        const t = Math.max(0, Math.min(1, -z / layer.length));
+        const swirl = 0.85 + Math.sin(z * 1.7 + position.getX(i) * 2.3) * 0.15;
+        colors[i * 4] = 1;
+        colors[i * 4 + 1] = 0.96;
+        colors[i * 4 + 2] = 0.88;
+        colors[i * 4 + 3] = Math.pow(1 - t, 1.6) * t * 4 * swirl;
+      }
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+
+      const material = new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: layer.alpha,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        fog: false,
+      });
+      this.beamMaterials.push(material);
+
+      const cone = new THREE.Mesh(geometry, material);
+      cone.renderOrder = 2;
+      beam.add(cone);
+    }
+
+    beam.position.set(0.16, -0.12, 0);
+    beam.visible = false;
+    camera.add(beam);
+    this.beam = beam;
   }
 
   get flashlightRef(): THREE.SpotLight | null {
@@ -187,6 +271,21 @@ export class HorrorEffects {
   setDustEnabled(enabled: boolean): void {
     this.dustEnabled = enabled;
     if (this.dust) this.dust.visible = enabled;
+    if (this.motes) this.motes.visible = enabled;
+  }
+
+  /**
+   * Guarantee a minimum ambient level so corridors, doors and furniture stay
+   * readable. Pushed up after the intro cutscene, where a black overlay has
+   * been covering the screen and the very first thing the player must see is
+   * the room they are standing in. Scripted blackouts still win - they are a
+   * deliberate three-second scare, not a broken state.
+   */
+  setAmbientFloor(value: number): void {
+    this.ambientFloor = Math.max(0, value);
+    if (performance.now() >= this.blackoutUntil && this.ambientLight.intensity < this.ambientFloor) {
+      this.ambientLight.intensity = this.ambientFloor;
+    }
   }
 
   update(dt: number, tension: number, camera: THREE.Camera | null): void {
@@ -217,9 +316,15 @@ export class HorrorEffects {
     // --- Flicker fluorescent tubes ---------------------------------------
     // Dark tubes still glow very faintly, which reads as moonlight through grime
     const tubeBase = 0.22 + this.powerLevel * 1.3;
+    this.buzzCooldown -= dt;
     for (const material of this.fluorescents) {
       if (Math.random() < 0.012) {
         material.emissiveIntensity = tubeBase * 0.08;
+        // A tube stuttering dark is what an old ballast sounds like
+        if (this.buzzCooldown <= 0) {
+          this.buzzCooldown = 2.5 + Math.random() * 5;
+          this.onFluorescentBuzz?.();
+        }
       } else if (Math.random() < 0.03) {
         material.emissiveIntensity = tubeBase * 1.6;
       } else {
@@ -269,7 +374,7 @@ export class HorrorEffects {
     const ambientBase = indoorAmbient + (outdoorAmbient - indoorAmbient) * this.outdoorLevel;
     const breathe = Math.sin(performance.now() * 0.0007) * 0.03 + this.danger * 0.07;
     this.ambientLight.intensity =
-      (blackedOut ? 0.04 : ambientBase + breathe) + strike * 2.6;
+      (blackedOut ? 0.04 : Math.max(this.ambientFloor, ambientBase + breathe)) + strike * 2.6;
     // The flash itself is cold
     this.ambientLight.color.setRGB(
       0.06 + this.outdoorLevel * 0.04 + strike * 0.5,
@@ -277,7 +382,23 @@ export class HorrorEffects {
       0.15 + this.outdoorLevel * 0.12 + strike * 0.7
     );
 
+    // --- Fake volumetric beam --------------------------------------------
+    if (this.beam) {
+      const lit = this.flashlight ? this.flashlight.intensity : 0;
+      this.beam.visible = lit > 0.05;
+      if (this.beam.visible) {
+        this.beamTime += dt;
+        const k = Math.min(1, lit / 5.5) * (this.outdoors ? 0.35 : 1);
+        const wobble = 0.92 + Math.sin(this.beamTime * 5.5) * 0.08;
+        for (let i = 0; i < this.beamMaterials.length; i++) {
+          const base = i === 0 ? 0.2 : 0.09;
+          this.beamMaterials[i].opacity = base * k * wobble;
+        }
+      }
+    }
+
     this.updateDust(dt, camera);
+    this.updateMotes(dt, camera);
     this.updateRain(dt, camera);
 
     // --- Random horror beats --------------------------------------------
@@ -306,11 +427,11 @@ export class HorrorEffects {
 
     const material = new THREE.PointsMaterial({
       map: createSoftDotTexture(),
-      color: 0xd8d2c0,
-      size: 0.07,
+      color: 0xf0e8d4,
+      size: 0.11,
       sizeAttenuation: true,
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.55,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });
@@ -352,6 +473,77 @@ export class HorrorEffects {
     attribute.needsUpdate = true;
 
     if (camera) this.dust.position.set(camera.position.x, 0, camera.position.z);
+  }
+
+  /**
+   * The bright layer of dust: fewer, larger motes that twinkle in and out, so a
+   * corridor sweep with the torch looks like it is full of floating debris.
+   */
+  private createMotes(): void {
+    const positions = new Float32Array(MOTE_COUNT * 3);
+    this.moteSpeeds = new Float32Array(MOTE_COUNT);
+
+    for (let i = 0; i < MOTE_COUNT; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * MOTE_RADIUS * 2;
+      positions[i * 3 + 1] = Math.random() * DUST_HEIGHT;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * MOTE_RADIUS * 2;
+      this.moteSpeeds[i] = 0.05 + Math.random() * 0.16;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const material = new THREE.PointsMaterial({
+      map: createSoftDotTexture(),
+      color: 0xfff3d8,
+      size: 0.19,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.7,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+
+    this.motes = new THREE.Points(geometry, material);
+    this.motes.frustumCulled = false;
+    this.motes.visible = this.dustEnabled;
+    this.scene.add(this.motes);
+  }
+
+  private updateMotes(dt: number, camera: THREE.Camera | null): void {
+    if (!this.motes || !this.moteSpeeds || !this.dustEnabled) return;
+
+    const attribute = this.motes.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const array = attribute.array as Float32Array;
+    const origin = this.motes.position;
+
+    for (let i = 0; i < MOTE_COUNT; i++) {
+      const speed = this.moteSpeeds[i];
+      array[i * 3 + 1] += speed * dt;
+      array[i * 3] += Math.sin((array[i * 3 + 1] + i * 0.7) * 0.35) * dt * 0.2;
+      array[i * 3 + 2] += Math.cos((array[i * 3 + 1] + i * 1.3) * 0.3) * dt * 0.15;
+
+      if (array[i * 3 + 1] > DUST_HEIGHT) {
+        array[i * 3 + 1] = 0;
+        array[i * 3] = (Math.random() - 0.5) * MOTE_RADIUS * 2;
+        array[i * 3 + 2] = (Math.random() - 0.5) * MOTE_RADIUS * 2;
+      }
+
+      if (array[i * 3] - origin.x > MOTE_RADIUS) array[i * 3] -= MOTE_RADIUS * 2;
+      if (array[i * 3] - origin.x < -MOTE_RADIUS) array[i * 3] += MOTE_RADIUS * 2;
+      if (array[i * 3 + 2] - origin.z > MOTE_RADIUS) array[i * 3 + 2] -= MOTE_RADIUS * 2;
+      if (array[i * 3 + 2] - origin.z < -MOTE_RADIUS) array[i * 3 + 2] += MOTE_RADIUS * 2;
+    }
+    attribute.needsUpdate = true;
+
+    // Sparkle: the whole layer breathes so individual motes appear to catch and
+    // lose the light as the beam sweeps past them.
+    const material = this.motes.material as THREE.PointsMaterial;
+    const t = performance.now() * 0.001;
+    material.opacity = 0.45 + Math.sin(t * 1.7) * 0.18 + Math.sin(t * 4.3) * 0.1;
+    material.size = 0.17 + Math.sin(t * 2.9) * 0.035;
+
+    if (camera) this.motes.position.set(camera.position.x, 0, camera.position.z);
   }
 
   private createRain(): void {
@@ -500,6 +692,9 @@ export class HorrorEffects {
       this.rain.position.set(0, 0, 0);
     }
     if (this.dust) this.dust.position.set(0, 0, 0);
+    if (this.motes) this.motes.position.set(0, 0, 0);
+    this.buzzCooldown = 0;
+    this.beamTime = 0;
 
     this.attachToScene();
   }

@@ -1,5 +1,7 @@
 import './style.css';
+import './dynamic-joystick.css';
 import { Game } from './game/Game';
+import { applyTranslations, t } from './game/i18n';
 
 // Signals to the fallback in index.html that the real bundle did load, so it
 // does not forward the visitor to the prebuilt copy in ./standalone.
@@ -10,6 +12,9 @@ declare global {
 }
 window.__DARK_ASYLUM_BOOTED = true;
 document.body.classList.remove('unbooted');
+
+// The loading screen is markup, so it is translated before the game boots.
+applyTranslations();
 
 // Touch devices play in landscape only (see #rotate-overlay in style.css)
 if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
@@ -37,7 +42,10 @@ game.init().catch((err) => {
   console.error('Game initialization failed:', err);
   const loadingText = document.getElementById('loading-text');
   if (loadingText) {
-    loadingText.textContent = 'Xatolik yuz berdi! Qayta yuklang.';
+    const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err);
+    loadingText.textContent = msg.slice(0, 200);
     loadingText.style.color = '#ff0000';
+    loadingText.style.fontSize = '11px';
+    loadingText.style.wordBreak = 'break-all';
   }
 });

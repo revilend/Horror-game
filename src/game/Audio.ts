@@ -38,6 +38,30 @@ export class HorrorAudio {
     }
   }
 
+  /** True once the context exists and is genuinely producing sound. */
+  get isRunning(): boolean {
+    return this.ctx?.state === 'running';
+  }
+
+  /**
+   * Brings a parked context back up.
+   *
+   * Mobile Chrome creates an AudioContext suspended unless it is done inside a
+   * real user gesture, and parks a running one whenever the tab loses focus.
+   * `resume()` settles a frame or two later, so this resolves once the context
+   * is actually live - the callers use that to decide whether starting the
+   * ambience will make any noise.
+   */
+  unlock(): Promise<boolean> {
+    const ctx = this.ctx;
+    if (!ctx) return Promise.resolve(false);
+    if (ctx.state === 'running') return Promise.resolve(true);
+    return ctx.resume().then(
+      () => ctx.state === 'running',
+      () => false,
+    );
+  }
+
   suspend(): void {
     if (this.ctx?.state === 'running') {
       void this.ctx.suspend();
@@ -272,6 +296,52 @@ export class HorrorAudio {
     source.start();
   }
 
+  /**
+   * A dying fluorescent ballast: a short mains hum with an electric stutter on
+   * top of it, played whenever a ceiling tube blinks out.
+   */
+  playElectricBuzz(): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+    const duration = 0.16 + Math.random() * 0.14;
+
+    // Mains hum at 100 Hz with a squashed square edge
+    const hum = this.ctx.createOscillator();
+    hum.type = 'square';
+    hum.frequency.value = 96 + Math.random() * 14;
+    const humFilter = this.ctx.createBiquadFilter();
+    humFilter.type = 'lowpass';
+    humFilter.frequency.value = 1400;
+    const humGain = this.ctx.createGain();
+    humGain.gain.value = 0;
+    humGain.gain.setValueAtTime(0, now);
+    humGain.gain.linearRampToValueAtTime(0.06, now + 0.012);
+    humGain.gain.linearRampToValueAtTime(0.02, now + duration * 0.6);
+    humGain.gain.linearRampToValueAtTime(0, now + duration);
+    hum.connect(humFilter);
+    humFilter.connect(humGain);
+    humGain.connect(this.masterGain);
+    hum.start(now);
+    hum.stop(now + duration);
+
+    // Ticking arc of the failing contact
+    const ticks = 5 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < ticks; i++) {
+      const at = now + Math.random() * duration;
+      const click = this.ctx.createOscillator();
+      const clickGain = this.ctx.createGain();
+      click.type = 'sawtooth';
+      click.frequency.value = 900 + Math.random() * 2600;
+      clickGain.gain.value = 0;
+      clickGain.gain.setValueAtTime(0.035, at);
+      clickGain.gain.exponentialRampToValueAtTime(0.0001, at + 0.02);
+      click.connect(clickGain);
+      clickGain.connect(this.masterGain);
+      click.start(at);
+      click.stop(at + 0.03);
+    }
+  }
+
   /** Glass vial shattering on the floor - sharp, bright, very loud. */
   playGlassShatter(): void {
     if (!this.ctx || !this.masterGain) return;
@@ -452,6 +522,266 @@ export class HorrorAudio {
     creakGain.gain.setTargetAtTime(0, now + 0.3, 0.3);
     creak.start(now + 0.05);
     creak.stop(now + 1.5);
+  }
+
+  /**
+   * A ward door on its hinge: the creak of the leaf turning, then the clack of
+   * it reaching the frame. Opening rises in pitch, shutting falls.
+   */
+  playDoorSwing(opening: boolean): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+    const duration = opening ? 0.55 : 0.42;
+
+    const creak = this.ctx.createOscillator();
+    creak.type = 'sawtooth';
+    creak.frequency.setValueAtTime(opening ? 110 : 210, now);
+    creak.frequency.linearRampToValueAtTime(opening ? 215 : 105, now + duration);
+
+    const wobble = this.ctx.createOscillator();
+    wobble.type = 'sine';
+    wobble.frequency.value = opening ? 9 : 13;
+    const wobbleDepth = this.ctx.createGain();
+    wobbleDepth.gain.value = 22;
+    wobble.connect(wobbleDepth);
+    wobbleDepth.connect(creak.frequency);
+
+    const band = this.ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = 620;
+    band.Q.value = 3.2;
+
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0;
+    creak.connect(band);
+    band.connect(gain);
+    gain.connect(this.masterGain);
+    gain.gain.setTargetAtTime(opening ? 0.11 : 0.09, now, 0.04);
+    gain.gain.setTargetAtTime(0, now + duration - 0.08, 0.05);
+
+    creak.start(now);
+    creak.stop(now + duration);
+    wobble.start(now);
+    wobble.stop(now + duration);
+
+    // The leaf meeting the frame, a beat after the creak dies.
+    const clack = this.ctx.createOscillator();
+    clack.type = 'square';
+    clack.frequency.setValueAtTime(190, now + duration);
+    clack.frequency.exponentialRampToValueAtTime(58, now + duration + 0.1);
+    const clackGain = this.ctx.createGain();
+    clackGain.gain.value = 0;
+    clack.connect(clackGain);
+    clackGain.connect(this.masterGain);
+    clackGain.gain.setTargetAtTime(0.14, now + duration, 0.006);
+    clackGain.gain.setTargetAtTime(0, now + duration + 0.04, 0.04);
+    clack.start(now + duration);
+    clack.stop(now + duration + 0.3);
+  }
+
+  /** Wood on wood: the drawer running out of its carcass. */
+  playDrawerSlide(): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+    const duration = 0.45;
+
+    const length = Math.floor(this.ctx.sampleRate * duration);
+    const buffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) {
+      // Grainy rather than smooth: a drawer judders as it runs.
+      const grain = Math.random() < 0.35 ? 1 : 0.45;
+      data[i] = (Math.random() * 2 - 1) * grain;
+    }
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = 0.8;
+
+    const band = this.ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.setValueAtTime(340, now);
+    band.frequency.linearRampToValueAtTime(760, now + duration);
+    band.Q.value = 1.1;
+
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0;
+    source.connect(band);
+    band.connect(gain);
+    gain.connect(this.masterGain);
+    gain.gain.setTargetAtTime(0.09, now, 0.03);
+    gain.gain.setTargetAtTime(0, now + duration - 0.06, 0.03);
+    source.start(now);
+    source.stop(now + duration);
+  }
+
+  /** Steel wardrobe: a hinge squeak with the clang of the plate behind it. */
+  playLockerDoor(opening: boolean): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+
+    const squeak = this.ctx.createOscillator();
+    squeak.type = 'sawtooth';
+    squeak.frequency.setValueAtTime(opening ? 420 : 560, now);
+    squeak.frequency.linearRampToValueAtTime(opening ? 700 : 380, now + 0.3);
+    const squeakBand = this.ctx.createBiquadFilter();
+    squeakBand.type = 'bandpass';
+    squeakBand.frequency.value = 1400;
+    squeakBand.Q.value = 5;
+    const squeakGain = this.ctx.createGain();
+    squeakGain.gain.value = 0;
+    squeak.connect(squeakBand);
+    squeakBand.connect(squeakGain);
+    squeakGain.connect(this.masterGain);
+    squeakGain.gain.setTargetAtTime(0.05, now, 0.05);
+    squeakGain.gain.setTargetAtTime(0, now + 0.24, 0.05);
+    squeak.start(now);
+    squeak.stop(now + 0.34);
+
+    // The sheet-metal body ringing.
+    for (const [ratio, level] of [
+      [1, 0.13],
+      [2.4, 0.06],
+      [4.1, 0.03],
+    ] as Array<[number, number]>) {
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = 232 * ratio;
+      const gain = this.ctx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      gain.gain.setTargetAtTime(level, now + 0.26, 0.004);
+      gain.gain.setTargetAtTime(0, now + 0.3, 0.13);
+      osc.start(now + 0.26);
+      osc.stop(now + 0.9);
+    }
+  }
+
+  /**
+   * The accordion gate slamming shut: a scrape of metal, then the heavy clank
+   * of the latch taking hold.
+   */
+  playElevatorGate(): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+
+    const length = Math.floor(this.ctx.sampleRate * 0.55);
+    const buffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) {
+      const t = i / length;
+      data[i] = (Math.random() * 2 - 1) * (0.4 + 0.6 * Math.sin(t * Math.PI));
+    }
+    const scrape = this.ctx.createBufferSource();
+    scrape.buffer = buffer;
+    scrape.playbackRate.value = 1.4;
+    const scrapeFilter = this.ctx.createBiquadFilter();
+    scrapeFilter.type = 'bandpass';
+    scrapeFilter.frequency.value = 2400;
+    scrapeFilter.Q.value = 1.2;
+    const scrapeGain = this.ctx.createGain();
+    scrapeGain.gain.value = 0.18;
+    scrape.connect(scrapeFilter);
+    scrapeFilter.connect(scrapeGain);
+    scrapeGain.connect(this.masterGain);
+    scrape.start(now);
+    scrape.stop(now + 0.55);
+
+    const clank = this.ctx.createOscillator();
+    clank.type = 'square';
+    clank.frequency.setValueAtTime(320, now + 0.5);
+    clank.frequency.exponentialRampToValueAtTime(70, now + 0.62);
+    const clankGain = this.ctx.createGain();
+    clankGain.gain.value = 0;
+    clank.connect(clankGain);
+    clankGain.connect(this.masterGain);
+    clankGain.gain.setTargetAtTime(0.24, now + 0.5, 0.006);
+    clankGain.gain.setTargetAtTime(0, now + 0.58, 0.05);
+    clank.start(now + 0.5);
+    clank.stop(now + 0.9);
+  }
+
+  /**
+   * The winch: a low motor drone with the cable winding over it, held for the
+   * length of the ride and then released.
+   */
+  playElevatorMotor(duration: number = 2.6): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+
+    const motor = this.ctx.createOscillator();
+    motor.type = 'sawtooth';
+    motor.frequency.setValueAtTime(46, now);
+    motor.frequency.linearRampToValueAtTime(58, now + duration * 0.5);
+    motor.frequency.linearRampToValueAtTime(44, now + duration);
+    const motorFilter = this.ctx.createBiquadFilter();
+    motorFilter.type = 'lowpass';
+    motorFilter.frequency.value = 320;
+    const motorGain = this.ctx.createGain();
+    motorGain.gain.value = 0;
+    motor.connect(motorFilter);
+    motorFilter.connect(motorGain);
+    motorGain.connect(this.masterGain);
+    motorGain.gain.setTargetAtTime(0.16, now, 0.12);
+    motorGain.gain.setTargetAtTime(0, now + duration - 0.35, 0.14);
+    motor.start(now);
+    motor.stop(now + duration);
+
+    const length = Math.floor(this.ctx.sampleRate * duration);
+    const buffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    const winding = this.ctx.createBufferSource();
+    winding.buffer = buffer;
+    winding.loop = true;
+    const windingFilter = this.ctx.createBiquadFilter();
+    windingFilter.type = 'bandpass';
+    windingFilter.frequency.value = 1450;
+    windingFilter.Q.value = 3.5;
+    const lfo = this.ctx.createOscillator();
+    lfo.type = 'square';
+    lfo.frequency.value = 13;
+    const lfoGain = this.ctx.createGain();
+    lfoGain.gain.value = 520;
+    lfo.connect(lfoGain);
+    lfoGain.connect(windingFilter.frequency);
+    const windingGain = this.ctx.createGain();
+    windingGain.gain.value = 0;
+    winding.connect(windingFilter);
+    windingFilter.connect(windingGain);
+    windingGain.connect(this.masterGain);
+    windingGain.gain.setTargetAtTime(0.06, now, 0.15);
+    windingGain.gain.setTargetAtTime(0, now + duration - 0.35, 0.14);
+    winding.start(now);
+    winding.stop(now + duration);
+    lfo.start(now);
+    lfo.stop(now + duration);
+  }
+
+  /** Mechanical brass bell struck once as the doors reach the floor. */
+  playElevatorDing(): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+
+    // A struck bell is inharmonic: 1x, 2.76x and 5.4x the fundamental.
+    const partials = [
+      { ratio: 1, gain: 0.2, decay: 1.5 },
+      { ratio: 2.76, gain: 0.09, decay: 0.9 },
+      { ratio: 5.4, gain: 0.045, decay: 0.45 },
+    ];
+    for (const partial of partials) {
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = 1046 * partial.ratio;
+      const gain = this.ctx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      gain.gain.setTargetAtTime(partial.gain, now, 0.005);
+      gain.gain.setTargetAtTime(0, now + 0.02, partial.decay / 3);
+      osc.start(now);
+      osc.stop(now + partial.decay);
+    }
   }
 
   /** Two-thump heartbeat. `intensity` scales volume up as danger rises. */

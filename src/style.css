@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Creepster&family=Special+Elite&display=swap');
+/* Fonts loaded via <link> in index.html for reliability. Fallbacks defined below. */
 
 /* ===== BASE ===== */
 * {
@@ -24,7 +24,7 @@ body {
   height: 100%;
   overflow: hidden;
   background: #000;
-  font-family: 'Special Elite', 'Courier New', monospace;
+  font-family: 'Special Elite', 'Courier New', 'Courier', monospace;
   color: var(--bone);
   touch-action: none;
   user-select: none;
@@ -39,6 +39,7 @@ body {
   height: 100%;
   z-index: 1;
   display: block;
+  touch-action: none;
 }
 
 .hidden {
@@ -74,6 +75,37 @@ body {
   );
 }
 
+/* A single soft band drifting down the screen, like a tape whose tracking is
+   going. Pure CSS, so it costs nothing on a phone GPU. */
+#vhs-tracking {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0.6;
+  background-image: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(140, 190, 255, 0.05) 44%,
+    rgba(255, 205, 205, 0.07) 50%,
+    rgba(255, 255, 255, 0) 56%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 100% 38vh;
+  background-repeat: no-repeat;
+  animation: vhsTracking 8.5s linear infinite;
+}
+
+@keyframes vhsTracking {
+  0% {
+    background-position: 0 -40vh;
+  }
+  100% {
+    background-position: 0 108vh;
+  }
+}
+
 #grain {
   position: fixed;
   inset: -60%;
@@ -98,7 +130,7 @@ body {
 }
 
 .glow-btn {
-  font-family: 'Creepster', cursive;
+  font-family: 'Creepster', 'Impact', 'Arial Black', cursive;
   font-size: 22px;
   letter-spacing: 4px;
   color: #ff5a5a;
@@ -146,7 +178,7 @@ body {
 }
 
 .menu-title {
-  font-family: 'Creepster', cursive;
+  font-family: 'Creepster', 'Impact', 'Arial Black', cursive;
   font-size: 42px;
   letter-spacing: 6px;
   color: var(--blood-bright);
@@ -217,7 +249,7 @@ body {
 }
 
 .loading-title {
-  font-family: 'Creepster', cursive;
+  font-family: 'Creepster', 'Impact', 'Arial Black', cursive;
   font-size: 44px;
   color: var(--blood);
   text-shadow: 0 0 22px var(--blood-bright), 0 0 44px #4c0000;
@@ -258,7 +290,7 @@ body {
 }
 
 .game-title {
-  font-family: 'Creepster', cursive;
+  font-family: 'Creepster', 'Impact', 'Arial Black', cursive;
   font-size: clamp(42px, 9vw, 76px);
   color: var(--blood);
   text-shadow: 0 0 28px var(--blood-bright), 0 0 60px #4a0000, 0 0 100px #2a0000;
@@ -419,7 +451,9 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 18px;
+  /* A notch and the browser's toolbar both eat into the top strip on a phone,
+     so the HUD starts below them instead of under them. */
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 18px 10px;
 }
 
 /* ===== INTERACT PROMPT ===== */
@@ -447,6 +481,93 @@ body {
 #interact-prompt.show {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+/* ===== FIXTURE PROMPT (doors, drawers, lockers) ===== */
+/*
+ * Sits above the hand prompt so both can be up at once without overlapping:
+ * the reach prompt owns pickups, this one owns anything the player works.
+ */
+#fixture-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: calc(22% + 46px);
+  transform: translate(-50%, 8px);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 14px 7px 9px;
+  background: rgba(5, 6, 10, 0.82);
+  border: 1px solid rgba(184, 145, 46, 0.42);
+  border-radius: 4px;
+  font-size: 13px;
+  letter-spacing: 1.4px;
+  color: var(--bone);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+#fixture-prompt.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  /* Tappable: on a phone there is no F key. */
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.fixture-key {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(184, 145, 46, 0.5);
+  border-radius: 3px;
+  background: rgba(46, 36, 12, 0.7);
+  font-size: 11px;
+  color: var(--amber);
+}
+
+/* While shut in a locker the reach prompt is meaningless, and the vents in
+   front of the camera are the only thing worth showing. */
+body.in-locker #interact-prompt,
+body.in-locker #fixture-prompt .fixture-key {
+  display: none !important;
+}
+
+#locker-view {
+  position: fixed;
+  inset: 0;
+  z-index: 18;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+#locker-view.show {
+  opacity: 1;
+}
+
+.locker-vent {
+  position: absolute;
+  left: 50%;
+  width: min(52vw, 420px);
+  height: 34px;
+  transform: translateX(-50%);
+  border-radius: 3px;
+  background: rgba(3, 4, 6, 0.92);
+  box-shadow: inset 0 0 14px rgba(0, 0, 0, 0.9);
+}
+
+.locker-vent.top {
+  top: 26%;
+}
+
+.locker-vent.bottom {
+  bottom: 26%;
 }
 
 /* Still readable when the item you need is not in hand yet */
@@ -613,7 +734,7 @@ body {
 }
 
 .minimap-level {
-  font-family: 'Special Elite', 'Courier New', monospace;
+  font-family: 'Special Elite', 'Courier New', 'Courier', monospace;
   font-size: 10.5px;
   letter-spacing: 1.6px;
   color: var(--amber);
@@ -884,7 +1005,7 @@ body {
 }
 
 .room-banner h3 {
-  font-family: 'Creepster', cursive;
+  font-family: 'Creepster', 'Impact', 'Arial Black', cursive;
   font-size: 30px;
   letter-spacing: 6px;
   color: #ded3bc;
@@ -984,7 +1105,7 @@ body {
   pointer-events: all;
 }
 .stair-floor-name {
-  font-family: 'Special Elite', 'Courier New', monospace;
+  font-family: 'Special Elite', 'Courier New', 'Courier', monospace;
   font-size: clamp(18px, 4vw, 32px);
   color: #ffab2e;
   letter-spacing: 6px;
@@ -1031,7 +1152,7 @@ body {
 }
 
 .gameover-title {
-  font-family: 'Creepster', cursive;
+  font-family: 'Creepster', 'Impact', 'Arial Black', cursive;
   font-size: 52px;
   letter-spacing: 6px;
   color: var(--blood);
@@ -1047,7 +1168,7 @@ body {
 }
 
 .win-title {
-  font-family: 'Creepster', cursive;
+  font-family: 'Creepster', 'Impact', 'Arial Black', cursive;
   font-size: 52px;
   letter-spacing: 6px;
   color: #35d64d;
@@ -1077,34 +1198,12 @@ body {
   pointer-events: none;
 }
 
-.joystick-area {
-  position: absolute;
-  bottom: 26px;
-  left: 26px;
-  width: 138px;
-  height: 138px;
-  pointer-events: all;
-}
-
-.joystick-base {
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.joystick-stick {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.08));
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  will-change: transform;
-}
+/*
+ * There is no visible joystick until a thumb lands: the floating stick is
+ * built by Player.setupMobileTouch() and follows the touch (#dynamic-joystick
+ * in dynamic-joystick.css). A permanently parked ring only ever obscured the
+ * HUD and the corridor.
+ */
 
 .mobile-buttons {
   position: absolute;
@@ -1244,7 +1343,7 @@ body {
 }
 
 .rotate-title {
-  font-family: 'Creepster', cursive;
+  font-family: 'Creepster', 'Impact', 'Arial Black', cursive;
   font-size: 26px;
   letter-spacing: 4px;
   color: var(--blood);
@@ -1344,6 +1443,93 @@ body {
     display: none !important;
   }
 }
+
+/* ===== LANGUAGE PICKER ===== */
+.lang-picker {
+  display: flex;
+  gap: 8px;
+}
+
+.lang-btn {
+  min-width: 54px;
+  padding: 7px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(160, 150, 130, 0.32);
+  border-radius: 4px;
+  color: var(--bone);
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.lang-btn:hover {
+  border-color: rgba(255, 171, 46, 0.6);
+}
+
+.lang-btn.active {
+  background: rgba(255, 171, 46, 0.16);
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+#pause-menu .lang-picker {
+  margin-top: 14px;
+  justify-content: center;
+}
+
+/* ===== LANDSCAPE GUARD ===== */
+#rotate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px;
+  background: #05060a;
+  text-align: center;
+}
+
+/* The card is only for touch devices held upright. */
+body.touch-device #rotate-overlay:not(.hidden) {
+  display: flex;
+}
+
+#rotate-overlay .rotate-icon {
+  font-size: 54px;
+  animation: rotateHint 2.4s ease-in-out infinite;
+}
+
+#rotate-overlay h2 {
+  margin: 0;
+  color: var(--amber);
+  font-size: 17px;
+  letter-spacing: 3px;
+}
+
+#rotate-overlay p {
+  margin: 0;
+  max-width: 460px;
+  color: var(--ash);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+@keyframes rotateHint {
+  0%, 45% { transform: rotate(0deg); }
+  70%, 100% { transform: rotate(90deg); }
+}
+
+/* Desktop hints vs touch hints */
+.touch-only { display: none; }
+body.touch-device .touch-only { display: block; }
+body.touch-device .menu-controls:not(.touch-only) { display: none; }
+/* The keyboard keycap makes no sense on a phone, which has the hand button. */
+body.touch-device .interact-key { display: none; }
 
 /* ===== LANDSCAPE / SHORT VIEWPORT TUNING ===== */
 @media (orientation: landscape) and (max-height: 560px) {
@@ -1508,27 +1694,11 @@ body {
     font-size: 18px;
   }
 
-  /* Keep the on-screen controls clear of the screen edges */
-  .joystick-area {
-    bottom: 12px;
-    left: 12px;
-    width: 118px;
-    height: 118px;
-  }
-
-  .joystick-base {
-    width: 104px;
-    height: 104px;
-  }
-
-  .joystick-stick {
-    width: 46px;
-    height: 46px;
-  }
-
+  /* Keep the on-screen controls clear of the screen edges and of the phone's
+     own gesture bar, which otherwise sits right on top of them. */
   .mobile-buttons {
-    bottom: 16px;
-    right: 12px;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    right: calc(12px + env(safe-area-inset-right, 0px));
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: flex-end;
@@ -1553,5 +1723,279 @@ body {
 
   .rotate-title {
     font-size: 22px;
+  }
+}
+
+/* ===== INTRO CUTSCENE ===== */
+#intro-eyelid {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  pointer-events: none;
+}
+
+.eyelid-top,
+.eyelid-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 52%;
+  background: #000;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.eyelid-top {
+  top: 0;
+  transform: scaleY(1);
+  transform-origin: top;
+}
+
+.eyelid-bottom {
+  bottom: 0;
+  transform: scaleY(1);
+  transform-origin: bottom;
+}
+
+#intro-eyelid.open .eyelid-top {
+  transform: scaleY(0);
+}
+
+#intro-eyelid.open .eyelid-bottom {
+  transform: scaleY(0);
+}
+
+#intro-typewriter {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  pointer-events: none;
+}
+
+.typewriter-inner {
+  max-width: min(88vw, 640px);
+  text-align: left;
+  padding: 0 24px;
+}
+
+.typewriter-label {
+  display: block;
+  font-family: 'Special Elite', 'Courier New', monospace;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: #6a5a4a;
+  margin-bottom: 12px;
+  opacity: 0.8;
+}
+
+.typewriter-text {
+  font-family: 'Special Elite', 'Courier New', monospace;
+  font-size: 15px;
+  line-height: 1.9;
+  color: #b8a890;
+  text-shadow: 0 0 12px rgba(255, 171, 46, 0.15);
+}
+
+.typewriter-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1.2em;
+  background: #b8a890;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: cursorBlink 0.7s steps(1) infinite;
+}
+
+@keyframes cursorBlink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+#skip-intro {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 960;
+  font-family: 'Special Elite', 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: rgba(200, 190, 170, 0.5);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(200, 190, 170, 0.2);
+  border-radius: 3px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+#skip-intro:hover,
+#skip-intro:active {
+  color: rgba(200, 190, 170, 0.85);
+  border-color: rgba(200, 190, 170, 0.5);
+}
+
+/*
+ * While the cinematic runs the player owns no controls, so the HUD and the
+ * touch stick stay hidden even if something re-shows them mid-cutscene. The
+ * class is removed by Game.forceEndIntro(), which is the single exit path from
+ * the intro in either direction.
+ */
+body.in-cutscene {
+  cursor: none;
+}
+
+body.in-cutscene #game-hud,
+body.in-cutscene #mobile-controls,
+body.in-cutscene #dynamic-joystick,
+body.in-cutscene #interact-prompt,
+body.in-cutscene #fixture-prompt,
+body.in-cutscene #locker-view,
+body.in-cutscene #lift-panel,
+body.in-cutscene #minimap-panel {
+  display: none !important;
+}
+
+/* ===== VINTAGE CAGE ELEVATOR ===== */
+
+/* Where the player is, under the objective line. */
+.lift-location {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 3px 12px;
+  border: 1px solid rgba(184, 145, 46, 0.3);
+  border-radius: 2px;
+  background: rgba(8, 7, 4, 0.55);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #e6cf94;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.lift-location-label {
+  font-size: 9px;
+  color: var(--ash);
+}
+
+#lift-location-text {
+  color: var(--amber);
+  text-shadow: 0 0 10px rgba(255, 171, 46, 0.35);
+}
+
+/*
+ * The call panel. It is a brass strip of floor buttons that only exists while
+ * the player is standing inside the cage, so it can never be mistaken for a
+ * permanent HUD element.
+ */
+.lift-panel {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 58px);
+  left: 50%;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  transform: translate(-50%, -12px);
+  border: 1px solid rgba(184, 145, 46, 0.45);
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgba(24, 21, 14, 0.95), rgba(9, 8, 6, 0.95));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(230, 207, 148, 0.14);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+}
+
+.lift-panel.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+.lift-panel-title {
+  font-size: 9px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: #c9a227;
+}
+
+.lift-floors {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+}
+
+.lift-floor-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 78px;
+  padding: 6px 9px 7px;
+  border: 1px solid rgba(184, 145, 46, 0.35);
+  border-radius: 2px;
+  background: rgba(18, 17, 13, 0.9);
+  color: var(--bone);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.08s;
+}
+
+.lift-floor-btn:active {
+  transform: translateY(1px);
+}
+
+.lift-floor-cap {
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: var(--amber);
+}
+
+.lift-floor-name {
+  max-width: 98px;
+  overflow: hidden;
+  font-size: 8px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ash);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lift-floor-btn.active {
+  border-color: rgba(255, 171, 46, 0.8);
+  background: rgba(52, 38, 12, 0.92);
+  box-shadow: 0 0 14px rgba(255, 171, 46, 0.2);
+}
+
+.lift-floor-btn.active .lift-floor-name {
+  color: #e6cf94;
+}
+
+.lift-floor-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Narrow landscape phones: drop the description line, keep the row inline. */
+@media (max-height: 420px) {
+  .lift-floor-btn {
+    min-width: 62px;
+    padding: 5px 7px 6px;
+  }
+
+  .lift-floor-name {
+    display: none;
+  }
+
+  .lift-panel {
+    top: calc(env(safe-area-inset-top, 0px) + 50px);
   }
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createMattressTexture } from './Textures';
 
 /**
  * Meshes for the items you have to find and carry.
@@ -12,6 +13,39 @@ function rnd(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
 
+/*
+ * Bedding is generated once and shared by every cot in the hospital: there are
+ * hundreds of them and re-drawing the canvas per bed would cost seconds of
+ * loading time for no visual gain.
+ */
+let sharedMattressMaterial: THREE.MeshStandardMaterial | null = null;
+
+function mattressMaterial(): THREE.MeshStandardMaterial {
+  if (!sharedMattressMaterial) {
+    sharedMattressMaterial = new THREE.MeshStandardMaterial({
+      map: createMattressTexture(),
+      roughness: 0.95,
+      metalness: 0.02,
+    });
+  }
+  return sharedMattressMaterial;
+}
+
+let sharedIvBagMaterial: THREE.MeshStandardMaterial | null = null;
+
+function ivBagMaterial(): THREE.MeshStandardMaterial {
+  if (!sharedIvBagMaterial) {
+    sharedIvBagMaterial = new THREE.MeshStandardMaterial({
+      color: 0xa9b6ba,
+      roughness: 0.3,
+      metalness: 0.05,
+      transparent: true,
+      opacity: 0.5,
+    });
+  }
+  return sharedIvBagMaterial;
+}
+
 function shadowAll(group: THREE.Group): void {
   group.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) child.castShadow = true;
@@ -20,30 +54,93 @@ function shadowAll(group: THREE.Group): void {
 
 /* ===================== Room-specific furniture =========================== */
 
-/** Hospital bed with mattress — used in patient rooms (D, XONA 201/202, etc.). */
+/**
+ * Hospital cot — sagging frame, tubular head and foot boards, and a
+ * blood-stained wrinkled mattress that sits slightly askew.
+ */
 export function createHospitalBed(
   metal: THREE.Material,
-  fabric: THREE.Material
+  fabricMaterial: THREE.Material,
+  frameMaterial: THREE.Material = metal
 ): THREE.Group {
   const group = new THREE.Group();
-  // Frame
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 2.1), metal);
-  frame.position.y = 0.25;
-  group.add(frame);
-  // Mattress
-  const mattress = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, 2.0), fabric);
-  mattress.position.y = 0.56;
-  group.add(mattress);
-  // Headboard
-  const head = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.6, 0.08), metal);
-  head.position.set(0, 0.8, -1.05);
-  group.add(head);
-  // Legs
-  for (const [lx, lz] of [[-0.45, -0.95], [0.45, -0.95], [-0.45, 0.95], [0.45, 0.95]]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 6), metal);
-    leg.position.set(lx, 0.0, lz);
-    group.add(leg);
+
+  // --- Bed frame: a shallow tray, not a solid box -----------------------
+  const trayGeo = new THREE.BoxGeometry(1.02, 0.06, 2.12);
+  const tray = new THREE.Mesh(trayGeo, frameMaterial);
+  tray.position.y = 0.44;
+  group.add(tray);
+
+  // Side rails
+  for (const sx of [-0.5, 0.5]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 2.12), frameMaterial);
+    rail.position.set(sx, 0.51, 0);
+    group.add(rail);
   }
+
+  // --- Mattress: wrinkled, blood-stained, tipped a couple of degrees -----
+  const mattress = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.14, 2.0), mattressMaterial());
+  mattress.position.set(rnd(-0.02, 0.02), 0.56, rnd(-0.02, 0.02));
+  mattress.rotation.z = rnd(-0.015, 0.015);
+  mattress.castShadow = true;
+  group.add(mattress);
+
+  // Dangling leather restraint straps off the side rails
+  for (const [sx, sz] of [[-0.52, -0.5], [0.52, -0.5], [-0.52, 0.5], [0.52, 0.5]]) {
+    const strap = new THREE.Mesh(
+      new THREE.BoxGeometry(0.07, rnd(0.16, 0.3), 0.09),
+      frameMaterial
+    );
+    strap.position.set(sx + Math.sign(sx) * 0.03, 0.4, sz + rnd(-0.06, 0.06));
+    strap.rotation.z = Math.sign(sx) * rnd(0.15, 0.5);
+    group.add(strap);
+  }
+
+  // --- Tubular headboard with vertical bars -----------------------------
+  const buildBoard = (z: number, height: number): void => {
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.0, 8), frameMaterial);
+    top.rotation.z = Math.PI / 2;
+    top.position.set(0, 0.5 + height, z);
+    group.add(top);
+    for (let i = -2; i <= 2; i++) {
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, height, 6), frameMaterial);
+      bar.position.set(i * 0.22, 0.5 + height / 2, z);
+      group.add(bar);
+    }
+  };
+  buildBoard(-1.06, 0.62); // headboard, taller
+  buildBoard(1.06, 0.34); // footboard
+
+  // A sheet the last patient kicked loose, bunched at the foot of the bed
+  const sheet = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.06, rnd(0.4, 0.7)), fabricMaterial);
+  sheet.position.set(rnd(-0.05, 0.05), 0.63, rnd(0.5, 0.75));
+  sheet.rotation.y = rnd(-0.2, 0.2);
+  group.add(sheet);
+
+  // Flattened pillow at the head end
+  const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.1, 0.3), fabricMaterial);
+  pillow.position.set(rnd(-0.08, 0.08), 0.65, -0.72);
+  pillow.rotation.y = rnd(-0.3, 0.3);
+  group.add(pillow);
+
+  // --- Legs, castors and rusted height cranks ---------------------------
+  for (const [lx, lz] of [[-0.44, -0.94], [0.44, -0.94], [-0.44, 0.94], [0.44, 0.94]]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.44, 6), frameMaterial);
+    leg.position.set(lx, 0.22, lz);
+    leg.rotation.z = rnd(-0.06, 0.06);
+    group.add(leg);
+
+    const castor = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.05, 8), metal);
+    castor.rotation.z = Math.PI / 2;
+    castor.position.set(lx, 0.055, lz);
+    group.add(castor);
+
+    const crank = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.26, 6), metal);
+    crank.position.set(lx, 0.44, lz + (lz > 0 ? -0.14 : 0.14));
+    crank.rotation.x = rnd(-0.3, 0.3);
+    group.add(crank);
+  }
+
   shadowAll(group);
   return group;
 }
@@ -252,19 +349,147 @@ export function createWheelchairProp(
   return group;
 }
 
-/** IV stand — tall thin pole with hooks. */
-export function createIVStand(metal: THREE.Material): THREE.Group {
+/**
+ * Crooked IV drip stand with a spent fluid bag still hooked up on it — the
+ * bag has half collapsed, so it reads as emptied rather than never used.
+ */
+export function createIVStand(
+  metal: THREE.Material,
+  bagMaterial?: THREE.Material
+): THREE.Group {
   const group = new THREE.Group();
+
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.0, 6), metal);
   pole.position.y = 1.0;
   group.add(pole);
+
+  // Wheeled base
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.04, 8), metal);
   base.position.y = 0.02;
   group.add(base);
-  // Hook at top
-  const hook = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.015, 6, 8, Math.PI), metal);
-  hook.position.set(0, 2.0, 0);
-  group.add(hook);
+  for (let i = 0; i < 4; i++) {
+    const angle = (i / 4) * Math.PI * 2 + 0.4;
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.2), metal);
+    leg.position.set(Math.cos(angle) * 0.16, 0.035, Math.sin(angle) * 0.16);
+    leg.rotation.y = -angle;
+    group.add(leg);
+    const castor = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 8), metal);
+    castor.rotation.z = Math.PI / 2;
+    castor.position.set(Math.cos(angle) * 0.26, 0.035, Math.sin(angle) * 0.26);
+    group.add(castor);
+  }
+
+  // Twin hooks
+  for (const hx of [-0.07, 0.07]) {
+    const hook = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.012, 6, 8, Math.PI), metal);
+    hook.position.set(hx, 2.0, 0);
+    group.add(hook);
+  }
+
+  // Collapsed fluid bag, hanging off the top
+  const bag = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, rnd(0.22, 0.34), 0.08),
+    bagMaterial ?? ivBagMaterial()
+  );
+  bag.position.set(rnd(-0.05, 0.05), 1.78, rnd(-0.03, 0.03));
+  bag.rotation.z = rnd(-0.16, 0.16);
+  group.add(bag);
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.9, 5), metal);
+  tube.position.set(bag.position.x + 0.04, 1.25, bag.position.z);
+  tube.rotation.z = rnd(-0.08, 0.08);
+  group.add(tube);
+
+  // The whole stand leans — nobody has straightened it in decades
+  group.rotation.z = rnd(-0.1, 0.1);
+  group.rotation.x = rnd(-0.07, 0.07);
+
+  shadowAll(group);
+  return group;
+}
+
+/**
+ * Stainless-steel instrument tray, tipped over with its contents spilled
+ * across the floor beside it.
+ */
+export function createInstrumentTray(
+  metal: THREE.Material,
+  glass: THREE.Material
+): THREE.Group {
+  const group = new THREE.Group();
+
+  // The tray itself, rolled onto its side
+  const tray = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.3), metal);
+  tray.position.set(0, 0.14, 0);
+  tray.rotation.z = rnd(1.1, 1.5);
+  tray.rotation.y = rnd(0, Math.PI);
+  group.add(tray);
+
+  // Spilled instruments
+  for (let i = 0; i < 4; i++) {
+    const angle = rnd(0, Math.PI * 2);
+    const dist = rnd(0.16, 0.44);
+    const tool = new THREE.Mesh(
+      new THREE.BoxGeometry(rnd(0.02, 0.035), 0.012, rnd(0.14, 0.24)),
+      metal
+    );
+    tool.position.set(Math.cos(angle) * dist, 0.014, Math.sin(angle) * dist);
+    tool.rotation.y = rnd(0, Math.PI);
+    group.add(tool);
+  }
+
+  // One syringe lying on its side
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.11, 8), glass);
+  barrel.rotation.z = Math.PI / 2;
+  barrel.rotation.y = rnd(0, Math.PI);
+  barrel.position.set(rnd(-0.3, 0.3), 0.016, rnd(-0.3, 0.3));
+  group.add(barrel);
+
+  shadowAll(group);
+  return group;
+}
+
+/** A scatter of small glass medicine bottles, most of them rolled over. */
+export function createPillBottles(
+  glass: THREE.Material,
+  metal: THREE.Material
+): THREE.Group {
+  const group = new THREE.Group();
+  const count = 2 + Math.floor(Math.random() * 3);
+
+  for (let i = 0; i < count; i++) {
+    const radius = rnd(0.028, 0.045);
+    const height = rnd(0.1, 0.17);
+    const bottle = new THREE.Group();
+
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius, radius * 0.94, height, 8),
+      glass
+    );
+    body.position.y = height / 2;
+    bottle.add(body);
+
+    // The cap — on top if the bottle is upright, useless if it is not
+    const cap = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius * 0.8, radius * 0.8, 0.018, 8),
+      metal
+    );
+    cap.position.y = height + 0.009;
+    bottle.add(cap);
+
+    const lying = Math.random() < 0.55;
+    const angle = rnd(0, Math.PI * 2);
+    const dist = rnd(0, 0.5);
+    if (lying) {
+      bottle.rotation.z = Math.PI / 2;
+      bottle.rotation.y = angle;
+      bottle.position.set(Math.cos(angle) * dist, radius, Math.sin(angle) * dist);
+    } else {
+      bottle.rotation.z = rnd(-0.25, 0.25);
+      bottle.position.set(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+    }
+    group.add(bottle);
+  }
+
   shadowAll(group);
   return group;
 }

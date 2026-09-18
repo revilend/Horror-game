@@ -1,3 +1,4 @@
+import { t } from './i18n';
 /**
  * What you are carrying, and the strip of slots that shows it.
  *
@@ -20,16 +21,86 @@ export interface ItemDef {
 }
 
 export const ITEM_DEFS: Record<ItemId, ItemDef> = {
-  key: { name: 'Kalit', icon: '\u{1F511}', hint: 'Qabulxonadagi eshik uchun', usable: false, perSlot: 1 },
-  card: { name: 'Darvoza kartasi', icon: '\u{1F4B3}', hint: 'Asosiy darvoza uchun', usable: false, perSlot: 1 },
-  fuse: { name: 'Saqlagich', icon: '\u{1F50C}', hint: 'Generator shchoti uchun', usable: false, perSlot: 1 },
-  crowbar: { name: 'Lom', icon: '\u{1F528}', hint: 'Tiqilib qolgan eshik uchun', usable: false, perSlot: 1 },
-  battery: { name: 'Batareya', icon: '\u{1F50B}', hint: 'Fonarchani quvvatlaydi', usable: true, perSlot: 3 },
-  bottle: { name: 'Shisha', icon: '\u{1F37A}', hint: 'Ovoz chiqarish uchun otish mumkin', usable: true, perSlot: 5 },
-  acid: { name: 'Kislota', icon: '\u{2620}\u{FE0F}', hint: 'Metallni eritadi', usable: false, perSlot: 1 },
-  ignition: { name: 'Kalit (mashina)', icon: '\u{1F511}', hint: 'Tez yordam mashinasi uchun', usable: false, perSlot: 1 },
-  boltcutters: { name: 'Qaychi', icon: '\u{2702}\u{FE0F}', hint: 'Zanjirlarni kesish uchun', usable: false, perSlot: 1 },
-  uv: { name: 'UV chiroq', icon: '\u{1FA79}', hint: 'Yashirin yozuvlarni ochish', usable: false, perSlot: 1 },
+  key: {
+    // Read through i18n so the strip and its tooltips follow the
+    // selected language, even when it is switched mid-run.
+    get name() { return t('item.key.name'); },
+    icon: '\u{1F511}',
+    get hint() { return t('item.key.hint'); },
+    usable: false, perSlot: 1,
+  },
+  card: {
+    // Read through i18n so the strip and its tooltips follow the
+    // selected language, even when it is switched mid-run.
+    get name() { return t('item.card.name'); },
+    icon: '\u{1F4B3}',
+    get hint() { return t('item.card.hint'); },
+    usable: false, perSlot: 1,
+  },
+  fuse: {
+    // Read through i18n so the strip and its tooltips follow the
+    // selected language, even when it is switched mid-run.
+    get name() { return t('item.fuse.name'); },
+    icon: '\u{1F50C}',
+    get hint() { return t('item.fuse.hint'); },
+    usable: false, perSlot: 1,
+  },
+  crowbar: {
+    // Read through i18n so the strip and its tooltips follow the
+    // selected language, even when it is switched mid-run.
+    get name() { return t('item.crowbar.name'); },
+    icon: '\u{1F528}',
+    get hint() { return t('item.crowbar.hint'); },
+    usable: false, perSlot: 1,
+  },
+  battery: {
+    // Read through i18n so the strip and its tooltips follow the
+    // selected language, even when it is switched mid-run.
+    get name() { return t('item.battery.name'); },
+    icon: '\u{1F50B}',
+    get hint() { return t('item.battery.hint'); },
+    usable: true, perSlot: 3,
+  },
+  bottle: {
+    // Read through i18n so the strip and its tooltips follow the
+    // selected language, even when it is switched mid-run.
+    get name() { return t('item.bottle.name'); },
+    icon: '\u{1F37A}',
+    get hint() { return t('item.bottle.hint'); },
+    usable: true, perSlot: 5,
+  },
+  acid: {
+    // Read through i18n so the strip and its tooltips follow the
+    // selected language, even when it is switched mid-run.
+    get name() { return t('item.acid.name'); },
+    icon: '\u{2620}\u{FE0F}',
+    get hint() { return t('item.acid.hint'); },
+    usable: false, perSlot: 1,
+  },
+  ignition: {
+    // Read through i18n so the strip and its tooltips follow the
+    // selected language, even when it is switched mid-run.
+    get name() { return t('item.ignition.name'); },
+    icon: '\u{1F511}',
+    get hint() { return t('item.ignition.hint'); },
+    usable: false, perSlot: 1,
+  },
+  boltcutters: {
+    // Read through i18n so the strip and its tooltips follow the
+    // selected language, even when it is switched mid-run.
+    get name() { return t('item.boltcutters.name'); },
+    icon: '\u{2702}\u{FE0F}',
+    get hint() { return t('item.boltcutters.hint'); },
+    usable: false, perSlot: 1,
+  },
+  uv: {
+    // Read through i18n so the strip and its tooltips follow the
+    // selected language, even when it is switched mid-run.
+    get name() { return t('item.uv.name'); },
+    icon: '\u{1FA79}',
+    get hint() { return t('item.uv.hint'); },
+    usable: false, perSlot: 1,
+  },
 };
 
 export class Inventory {

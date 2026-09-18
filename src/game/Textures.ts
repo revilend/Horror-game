@@ -76,45 +76,111 @@ function toTexture(
 /** Peeling, water-stained asylum concrete. */
 export function createWallTexture(): THREE.CanvasTexture {
   const ctx = context2d();
-  // Sickly institutional green-tinged plaster: bright enough that the ambient
-  // term carries colour into the corridors instead of swallowing it.
-  ctx.fillStyle = '#5a5e56';
-  ctx.fillRect(0, 0, SIZE, SIZE);
 
-  blotches(ctx, 80, 'rgba(255,255,255,ALPHA)', 0.02, 0.07, 8, 52);
-  blotches(ctx, 60, 'rgba(0,0,0,ALPHA)', 0.05, 0.16, 10, 60);
+  // ── DUAL-TONE HOSPITAL WALL ──
+  // Bottom 40%: grimy pale-green hospital tiles with dirty grout
+  // Top 60%: peeling cracked beige concrete with mold streaks
+  const splitY = SIZE * 0.4;
 
+  // ── TOP: Peeling concrete ──
+  ctx.fillStyle = '#6b6558';
+  ctx.fillRect(0, 0, SIZE, splitY);
+  blotches(ctx, 50, 'rgba(255,255,255,ALPHA)', 0.02, 0.06, 8, 44);
+  blotches(ctx, 40, 'rgba(0,0,0,ALPHA)', 0.06, 0.18, 10, 50);
+
+  // Mold streaks dripping down from ceiling
+  for (let i = 0; i < 18; i++) {
+    const w = rnd(2, 8);
+    const h = rnd(40, 140);
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, `rgba(18,28,14,${rnd(0.2, 0.5).toFixed(3)})`);
+    grad.addColorStop(1, 'rgba(18,28,14,0)');
+    ctx.fillStyle = grad;
+    ctx.save();
+    ctx.translate(rnd(0, SIZE), rnd(-10, SIZE * 0.25));
+    ctx.fillRect(-w / 2, 0, w, h);
+    ctx.restore();
+  }
+
+  // Claw scratch marks (3 parallel lines)
+  for (let i = 0; i < 5; i++) {
+    const sx = rnd(10, SIZE - 10);
+    const sy = rnd(10, splitY - 10);
+    const angle = rnd(-0.4, 0.4);
+    const len = rnd(20, 60);
+    ctx.strokeStyle = `rgba(40,30,22,${rnd(0.3, 0.6).toFixed(2)})`;
+    ctx.lineWidth = rnd(1, 2.5);
+    for (let s = 0; s < 3; s++) {
+      ctx.beginPath();
+      const ox = s * 3 - 3;
+      ctx.moveTo(sx + ox, sy);
+      ctx.lineTo(sx + ox + Math.cos(angle) * len, sy + Math.sin(angle) * len);
+      ctx.stroke();
+    }
+  }
+
+  // Peeling paint patches
+  for (let i = 0; i < 8; i++) {
+    const px = rnd(0, SIZE);
+    const py = rnd(0, splitY);
+    const pw = rnd(12, 36);
+    const ph = rnd(8, 24);
+    ctx.fillStyle = `rgba(${rnd(80, 100).toFixed(0)},${rnd(75, 95).toFixed(0)},${rnd(60, 80).toFixed(0)},${rnd(0.12, 0.3).toFixed(3)})`;
+    ctx.fillRect(px, py, pw, ph);
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px, py, pw, ph);
+  }
+
+  // ── BOTTOM: Hospital tiles ──
+  const tileH = 12;
+  const tileW = 16;
+  for (let ty = splitY; ty < SIZE; ty += tileH) {
+    for (let tx = 0; tx < SIZE; tx += tileW) {
+      const shade = rnd(62, 82);
+      ctx.fillStyle = `rgb(${shade.toFixed(0)},${(shade + rnd(2, 8)).toFixed(0)},${(shade - 4).toFixed(0)})`;
+      ctx.fillRect(tx + 1, ty + 1, tileW - 2, tileH - 2);
+      // Grout lines
+      ctx.strokeStyle = `rgba(20,18,14,${rnd(0.5, 0.8).toFixed(2)})`;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(tx + 0.5, ty + 0.5, tileW - 1, tileH - 1);
+    }
+  }
+  // Grime on tiles
+  blotches(ctx, 35, 'rgba(30,25,18,ALPHA)', 0.08, 0.25, 4, 16);
+
+  // ── Shared overlays ──
   // Damp streaks running down from the ceiling
-  for (let i = 0; i < 24; i++) {
-    const width = rnd(2, 11);
-    const height = rnd(60, 220);
+  for (let i = 0; i < 20; i++) {
+    const width = rnd(2, 10);
+    const height = rnd(60, 200);
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, `rgba(12,10,8,${rnd(0.18, 0.4).toFixed(3)})`);
+    gradient.addColorStop(0, `rgba(12,10,8,${rnd(0.15, 0.35).toFixed(3)})`);
     gradient.addColorStop(1, 'rgba(12,10,8,0)');
     ctx.fillStyle = gradient;
     ctx.save();
-    ctx.translate(rnd(0, SIZE), rnd(-20, SIZE * 0.4));
+    ctx.translate(rnd(0, SIZE), rnd(-20, SIZE * 0.3));
     ctx.fillRect(-width / 2, 0, width, height);
     ctx.restore();
   }
 
   // Hairline cracks
-  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
   ctx.lineWidth = 1;
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 12; i++) {
     ctx.beginPath();
     let x = rnd(0, SIZE);
     let y = rnd(0, SIZE);
     ctx.moveTo(x, y);
-    for (let step = 0; step < 6; step++) {
-      x += rnd(-26, 26);
-      y += rnd(-26, 26);
+    for (let step = 0; step < 5; step++) {
+      x += rnd(-22, 22);
+      y += rnd(-22, 22);
       ctx.lineTo(x, y);
     }
     ctx.stroke();
   }
 
-  addGrain(ctx, 30);
+  addGrain(ctx, 28);
   return toTexture(ctx, 2, 2);
 }
 
@@ -239,15 +305,26 @@ export function createBloodTexture(): THREE.CanvasTexture {
 }
 
 /**
- * Blood scrawled across a wall.
+ * Paints a blood scrawl onto a canvas.
+ *
+ * Split out of createBloodTextTexture so the same canvas can be repainted when
+ * the player switches language: the texture object stays identical, so every
+ * mesh pointing at it updates for free.
  *
  * Deliberately uses a web-safe serif instead of the Google font: canvas text
  * has to be drawn immediately, and webfonts may not have loaded yet.
  */
-export function createBloodTextTexture(text: string): THREE.CanvasTexture {
-  const size = 512;
-  const ctx = context2d(size);
-  ctx.clearRect(0, 0, size, size);
+export function paintBloodText(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  text: string
+): void {
+  const size = Math.min(width, height);
+  ctx.clearRect(0, 0, width, height);
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = 'bold 84px Georgia, "Times New Roman", serif';
@@ -285,9 +362,9 @@ export function createBloodTextTexture(text: string): THREE.CanvasTexture {
     const lineIndex = lines.indexOf(line);
     const y = startY + lineIndex * lineHeight;
     const x = rnd(size * 0.18, size * 0.82);
-    const height = rnd(10, 70);
+    const drip = rnd(10, 70);
     ctx.globalAlpha = rnd(0.12, 0.4);
-    ctx.fillRect(x, y + rnd(16, 30), rnd(1.5, 5), height);
+    ctx.fillRect(x, y + rnd(16, 30), rnd(1.5, 5), drip);
   }
   ctx.globalAlpha = 1;
 
@@ -298,11 +375,161 @@ export function createBloodTextTexture(text: string): THREE.CanvasTexture {
     ctx.arc(rnd(0, size), rnd(0, size), rnd(1, 6), 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.globalCompositeOperation = 'source-over';
+  ctx.restore();
+}
+
+/** Blood scrawled across a wall. */
+export function createBloodTextTexture(text: string): THREE.CanvasTexture {
+  const size = 512;
+  const ctx = context2d(size);
+  paintBloodText(ctx, size, size, text);
 
   const texture = new THREE.CanvasTexture(ctx.canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
+}
+
+/**
+ * Blood-stained, wrinkled mattress ticking for the hospital cots.
+ * Wrinkle creases run one way and the old stains sink into the creases, which
+ * is what sells "this bed has not been changed since 1987".
+ */
+export function createMattressTexture(): THREE.CanvasTexture {
+  const ctx = context2d();
+  ctx.fillStyle = '#726d5d';
+  ctx.fillRect(0, 0, SIZE, SIZE);
+
+  // Water-ring stains and grime
+  blotches(ctx, 55, 'rgba(70,58,36,ALPHA)', 0.05, 0.2, 5, 30);
+  blotches(ctx, 30, 'rgba(20,18,14,ALPHA)', 0.06, 0.22, 6, 34);
+
+  // Wrinkle creases — slightly wavy horizontal folds
+  for (let i = 0; i < 46; i++) {
+    const y = rnd(0, SIZE);
+    ctx.strokeStyle = `rgba(0,0,0,${rnd(0.07, 0.26).toFixed(3)})`;
+    ctx.lineWidth = rnd(1, 3.4);
+    ctx.beginPath();
+    ctx.moveTo(-4, y);
+    for (let x = 0; x <= SIZE + 4; x += 16) ctx.lineTo(x, y + rnd(-7, 7));
+    ctx.stroke();
+    // Highlight on the crest of the fold so the crease reads under the torch
+    ctx.strokeStyle = `rgba(215,208,186,${rnd(0.04, 0.14).toFixed(3)})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-4, y - 1.6);
+    for (let x = 0; x <= SIZE + 4; x += 16) ctx.lineTo(x, y - 1.6 + rnd(-7, 7));
+    ctx.stroke();
+  }
+
+  // Dried blood — soaked in around the middle of the mattress
+  for (let i = 0; i < 12; i++) {
+    const x = rnd(SIZE * 0.1, SIZE * 0.9);
+    const y = rnd(SIZE * 0.1, SIZE * 0.9);
+    const radius = rnd(7, 30);
+    const gradient = ctx.createRadialGradient(x, y, 1, x, y, radius);
+    gradient.addColorStop(0, `rgba(74,6,9,${rnd(0.5, 0.88).toFixed(2)})`);
+    gradient.addColorStop(0.6, `rgba(58,4,8,${rnd(0.2, 0.4).toFixed(2)})`);
+    gradient.addColorStop(1, 'rgba(44,3,6,0)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    // A few run-off drips
+    ctx.fillStyle = `rgba(60,4,8,${rnd(0.25, 0.5).toFixed(2)})`;
+    ctx.fillRect(x + rnd(-3, 3), y, rnd(1.5, 3), rnd(6, 22));
+  }
+
+  addGrain(ctx, 26);
+  return toTexture(ctx, 1, 1);
+}
+
+/**
+ * Ribbed galvanised ventilation duct, gone dull with age and rust at the seams.
+ */
+export function createDuctTexture(): THREE.CanvasTexture {
+  const ctx = context2d();
+  ctx.fillStyle = '#6a6e72';
+  ctx.fillRect(0, 0, SIZE, SIZE);
+
+  // Brushed metal streaks along the duct
+  for (let i = 0; i < 260; i++) {
+    ctx.strokeStyle = `rgba(${rnd(200, 255).toFixed(0)},${rnd(205, 255).toFixed(0)},255,${rnd(0.02, 0.07).toFixed(3)})`;
+    ctx.lineWidth = 1;
+    const y = rnd(0, SIZE);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(SIZE, y + rnd(-1.5, 1.5));
+    ctx.stroke();
+  }
+
+  // Spiral ribbing: bright ridge above a dark valley
+  const rib = 26;
+  for (let y = 0; y < SIZE; y += rib) {
+    ctx.fillStyle = 'rgba(20,22,24,0.42)';
+    ctx.fillRect(0, y, SIZE, 5);
+    ctx.fillStyle = 'rgba(232,238,244,0.16)';
+    ctx.fillRect(0, y + 5, SIZE, 3);
+  }
+
+  // Rust blooming out of the seams and rivets
+  blotches(ctx, 40, 'rgba(96,54,24,ALPHA)', 0.08, 0.32, 5, 32);
+  for (let i = 0; i < 34; i++) {
+    ctx.fillStyle = `rgba(40,42,44,${rnd(0.3, 0.6).toFixed(2)})`;
+    ctx.beginPath();
+    ctx.arc(rnd(6, SIZE - 6), rnd(6, SIZE - 6), rnd(1.2, 2.4), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  addGrain(ctx, 22);
+  return toTexture(ctx, 2, 1);
+}
+
+/**
+ * Loose patient chart page: ruled paper, a faded letterhead and a typed block
+ * of observations. Flat clutter that sells the hospital being abandoned mid-round.
+ */
+export function createChartTexture(): THREE.CanvasTexture {
+  const ctx = context2d();
+
+  // Aged paper
+  ctx.fillStyle = '#b9b09a';
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  blotches(ctx, 40, 'rgba(96,80,50,ALPHA)', 0.05, 0.22, 5, 30);
+
+  // Letterhead bar
+  ctx.fillStyle = 'rgba(52,64,74,0.75)';
+  ctx.fillRect(18, 16, SIZE - 36, 16);
+  ctx.fillStyle = 'rgba(236,232,220,0.9)';
+  ctx.fillRect(24, 22, 96, 4);
+
+  // Typed observation rows
+  for (let row = 0; row < 14; row++) {
+    const y = 52 + row * 13;
+    ctx.fillStyle = `rgba(34,30,24,${rnd(0.35, 0.72).toFixed(2)})`;
+    let x = 20;
+    const width = SIZE - 40;
+    while (x < width) {
+      const w = rnd(8, 34);
+      if (x + w > width) break;
+      ctx.fillRect(x, y, w, 4);
+      x += w + rnd(5, 11);
+    }
+  }
+
+  // Red stamp and a coffee ring
+  ctx.strokeStyle = 'rgba(120,20,20,0.55)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(SIZE * 0.72, SIZE * 0.78, 34, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(78,58,34,0.3)';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(SIZE * 0.24, SIZE * 0.3, 26, 0, Math.PI * 2);
+  ctx.stroke();
+
+  addGrain(ctx, 20);
+  return toTexture(ctx, 1, 1);
 }
 
 /** Cracked, oil-stained asphalt for the grounds outside the hospital. */
