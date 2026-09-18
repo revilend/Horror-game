@@ -101,7 +101,7 @@ export class HorrorAudio {
 
     // Always re-raise the gain: after `stopAmbience()` (death / victory) the bed
     // is silent, and a restart must bring it back.
-    this.ambienceGain.gain.setTargetAtTime(0.3, this.ctx.currentTime, 1.2);
+    this.ambienceGain.gain.setTargetAtTime(0.45, this.ctx.currentTime, 1.2);
   }
 
   private buildAmbienceGraph(): void {
@@ -158,6 +158,86 @@ export class HorrorAudio {
     windFilter.connect(windGain);
     windGain.connect(this.ambienceGain);
     this.windSource.start();
+
+    // --- Dark ambient music pad -------------------------------------------
+    // Two detuned triangle oscillators for a thick, slow-moving pad drone.
+    const padGain = this.ctx.createGain();
+    padGain.gain.value = 0.12;
+    padGain.connect(this.ambienceGain);
+
+    const padA = this.ctx.createOscillator();
+    padA.type = 'triangle';
+    padA.frequency.value = 55; // low A
+    const padB = this.ctx.createOscillator();
+    padB.type = 'triangle';
+    padB.frequency.value = 55.6; // slight detune for chorus
+
+    const padFilter = this.ctx.createBiquadFilter();
+    padFilter.type = 'lowpass';
+    padFilter.frequency.value = 220;
+    padFilter.Q.value = 1.2;
+
+    padA.connect(padFilter);
+    padB.connect(padFilter);
+    padFilter.connect(padGain);
+    padA.start();
+    padB.start();
+
+    // Slow LFO on the filter cutoff for movement
+    const lfo = this.ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.08;
+    const lfoGain = this.ctx.createGain();
+    lfoGain.gain.value = 80;
+    lfo.connect(lfoGain);
+    lfoGain.connect(padFilter.frequency);
+    lfo.start();
+
+    // Eerie harmonic overtone — a high, barely-audible singing tone
+    const overtone = this.ctx.createOscillator();
+    overtone.type = 'sine';
+    overtone.frequency.value = 220; // A3
+    const overtoneGain = this.ctx.createGain();
+    overtoneGain.gain.value = 0.025;
+    const overtoneFilter = this.ctx.createBiquadFilter();
+    overtoneFilter.type = 'bandpass';
+    overtoneFilter.frequency.value = 440;
+    overtoneFilter.Q.value = 18;
+    overtone.connect(overtoneFilter);
+    overtoneFilter.connect(overtoneGain);
+    overtoneGain.connect(this.ambienceGain);
+    overtone.start();
+
+    // Slow vibrato on the overtone
+    const vib = this.ctx.createOscillator();
+    vib.type = 'sine';
+    vib.frequency.value = 0.3;
+    const vibGain = this.ctx.createGain();
+    vibGain.gain.value = 4;
+    vib.connect(vibGain);
+    vibGain.connect(overtone.frequency);
+    vib.start();
+
+    // Deep pulse — rhythmic sub-bass throb
+    const pulseGain = this.ctx.createGain();
+    pulseGain.gain.value = 0;
+    pulseGain.connect(this.ambienceGain);
+
+    const pulseOsc = this.ctx.createOscillator();
+    pulseOsc.type = 'sine';
+    pulseOsc.frequency.value = 30;
+    pulseOsc.connect(pulseGain);
+    pulseOsc.start();
+
+    // LFO the pulse gain for a throb at ~0.15 Hz
+    const pulseLfo = this.ctx.createOscillator();
+    pulseLfo.type = 'sine';
+    pulseLfo.frequency.value = 0.15;
+    const pulseLfoGain = this.ctx.createGain();
+    pulseLfoGain.gain.value = 0.06;
+    pulseLfo.connect(pulseLfoGain);
+    pulseLfoGain.connect(pulseGain.gain);
+    pulseLfo.start();
   }
 
   stopAmbience(): void {
