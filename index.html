@@ -194,5 +194,67 @@
   </div>
 
   <script type="module" src="/src/main.ts"></script>
+
+  <!--
+    Raw-branch fallback.
+
+    scripts/sync-standalone.mjs keeps a built copy of the game in ./standalone/,
+    for the case where GitHub Pages is left on "Deploy from a branch": GitHub
+    then publishes this repository root verbatim, including this file - and
+    this file's entry point is TypeScript, which no browser can run. The page
+    would render as dead, unstyled markup.
+
+    So: if this document is NOT the built copy, and the entry point is not
+    being served as runnable code, hand the visitor to ./standalone/ instead.
+    Every guard below is deliberately conservative, because the same file is
+    also the dev server's entry and must be left alone there.
+  -->
+  <script>
+    (function () {
+      function forward() {
+        location.replace('./standalone/' + (location.hash || ''));
+      }
+
+      function decide() {
+        // The built copy is the one with a hashed bundle in it. If this
+        // document already has one, we ARE the built copy: do nothing.
+        if (document.querySelector('script[src*="assets/index-"]')) return;
+
+        // Opened straight off disk.
+        if (location.protocol !== 'http:' && location.protocol !== 'https:') {
+          forward();
+          return;
+        }
+
+        // A dev or preview server listens on a port; GitHub Pages does not.
+        if (location.port) return;
+
+        // Last check: is the entry point being served as code a browser can
+        // run? A dev server answers with a JavaScript content type. A static
+        // host serving the raw repository answers with something else, and
+        // that is the case this whole script exists for.
+        var entry = document.querySelector('script[src$="/src/main.ts"]');
+        if (!entry) {
+          forward();
+          return;
+        }
+        fetch(entry.getAttribute('src'), { cache: 'no-store' })
+          .then(function (response) {
+            return response.ok ? response.headers.get('content-type') || '' : '';
+          })
+          .then(function (type) {
+            if (/javascript|ecmascript/i.test(type)) return;
+            forward();
+          })
+          .catch(forward);
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', decide);
+      } else {
+        decide();
+      }
+    })();
+  </script>
 </body>
 </html>
