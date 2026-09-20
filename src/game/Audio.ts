@@ -12,6 +12,11 @@ export class HorrorAudio {
   private windSource: AudioBufferSourceNode | null = null;
   private rainSource: AudioBufferSourceNode | null = null;
   private rainGain: GainNode | null = null;
+  /** The tap in the ward basin, and the valve radio down the corridor. */
+  private tapSource: AudioBufferSourceNode | null = null;
+  private tapGain: GainNode | null = null;
+  private staticSource: AudioBufferSourceNode | null = null;
+  private staticGain: GainNode | null = null;
   private isInitialized = false;
   private ambienceRunning = false;
   private muted = false;
@@ -374,6 +379,52 @@ export class HorrorAudio {
     filter.connect(gain);
     gain.connect(this.masterGain);
     source.start();
+  }
+
+  /**
+   * Dr Aris' footfall: a hard leather heel rapping a tiled floor, with a
+   * little more weight behind it than the player's own step. Fired from his
+   * walk cycle, so it stays in time with the legs.
+   */
+  playDoctorStep(volume: number = 0.45): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+
+    // The click of the heel.
+    const bufferSize = Math.floor(this.ctx.sampleRate * 0.09);
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.05));
+    }
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+
+    const click = this.ctx.createBiquadFilter();
+    click.type = 'bandpass';
+    click.frequency.value = 1500 + Math.random() * 700;
+    click.Q.value = 1.1;
+
+    const clickGain = this.ctx.createGain();
+    clickGain.gain.value = volume;
+
+    source.connect(click);
+    click.connect(clickGain);
+    clickGain.connect(this.masterGain);
+    source.start(now);
+
+    // And the low thud of the weight landing on it.
+    const thud = this.ctx.createOscillator();
+    thud.type = 'sine';
+    thud.frequency.setValueAtTime(96, now);
+    thud.frequency.exponentialRampToValueAtTime(48, now + 0.08);
+    const thudGain = this.ctx.createGain();
+    thudGain.gain.setValueAtTime(volume * 0.5, now);
+    thudGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.11);
+    thud.connect(thudGain);
+    thudGain.connect(this.masterGain);
+    thud.start(now);
+    thud.stop(now + 0.12);
   }
 
   /**
@@ -978,6 +1029,195 @@ export class HorrorAudio {
    * through the reception door should feel like walking into a storm, not
    * like a loop restarting.
    */
+  /**
+   * A loop of filtered noise, the shape every sustained prop sound has: a
+   * running tap, the static out of a valve radio. Built once and left running
+   * at zero gain, because starting a buffer on demand is what makes mobile
+   * browsers drop the first half second of a sound.
+   */
+  private loopFor(which: 'tap' | 'static', build: () => AudioNode): GainNode | null {
+    if (!this.ctx || !this.masterGain) return null;
+
+    const existing = which === 'tap' ? this.tapGain : this.staticGain;
+    if (existing) return existing;
+
+    const seconds = 2;
+    const buffer = this.ctx.createBuffer(1, this.ctx.sampleRate * seconds, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * 0.6;
+    }
+
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+
+    const shaper = build();
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0;
+    source.connect(shaper);
+    shaper.connect(gain);
+    gain.connect(this.masterGain);
+    source.start();
+
+    if (which === 'tap') {
+      this.tapSource = source;
+      this.tapGain = gain;
+    } else {
+      this.staticSource = source;
+      this.staticGain = gain;
+    }
+    return gain;
+  }
+
+  /** The wall switch: a hard plastic click, and the tube buzzing back. */
+  playSwitchClick(on: boolean): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+
+    const click = this.ctx.createOscillator();
+    click.type = 'square';
+    click.frequency.setValueAtTime(on ? 2200 : 1500, now);
+    click.frequency.exponentialRampToValueAtTime(on ? 420 : 260, now + 0.05);
+    const clickGain = this.ctx.createGain();
+    clickGain.gain.value = 0;
+    click.connect(clickGain);
+    clickGain.connect(this.masterGain);
+    clickGain.gain.setTargetAtTime(0.16, now, 0.004);
+    clickGain.gain.setTargetAtTime(0, now + 0.03, 0.02);
+    click.start(now);
+    click.stop(now + 0.2);
+
+    if (!on) return;
+    // Coming on, the tube strikes with a short buzz underneath the click.
+    const buzz = this.ctx.createOscillator();
+    buzz.type = 'sawtooth';
+    buzz.frequency.setValueAtTime(118, now + 0.04);
+    const buzzGain = this.ctx.createGain();
+    buzzGain.gain.value = 0;
+    buzz.connect(buzzGain);
+    buzzGain.connect(this.masterGain);
+    buzzGain.gain.setTargetAtTime(0.06, now + 0.04, 0.02);
+    buzzGain.gain.setTargetAtTime(0, now + 0.5, 0.2);
+    buzz.start(now + 0.04);
+    buzz.stop(now + 1.1);
+  }
+
+  /** Rusty water hammering into a basin, plus the drip it leaves behind. */
+  setWaterRunning(running: boolean): void {
+    if (!this.ctx) return;
+    const gain = this.loopFor('tap', () => {
+      const body = this.ctx!.createBiquadFilter();
+      body.type = 'bandpass';
+      body.frequency.value = 900;
+      body.Q.value = 0.7;
+      return body;
+    });
+    gain?.gain.setTargetAtTime(running ? 0.1 : 0, this.ctx.currentTime, running ? 0.15 : 0.4);
+
+    if (!running) return;
+    // Two drips after the tap is shut, timed off the same context clock.
+    for (const delay of [0.35, 0.95, 1.7]) this.scheduleDrip(delay);
+  }
+
+  /** One drip, falling into standing water. */
+  private scheduleDrip(delay: number): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime + delay;
+    const drip = this.ctx.createOscillator();
+    drip.type = 'sine';
+    drip.frequency.setValueAtTime(1500, now);
+    drip.frequency.exponentialRampToValueAtTime(320, now + 0.07);
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0;
+    drip.connect(gain);
+    gain.connect(this.masterGain);
+    gain.gain.setTargetAtTime(0.12, now, 0.005);
+    gain.gain.setTargetAtTime(0, now + 0.05, 0.03);
+    drip.start(now);
+    drip.stop(now + 0.3);
+  }
+
+  /**
+   * The valve radio: wideband static with a whistle behind it. Loud on
+   * purpose - in the fiction it is loud enough to pull the creature towards it.
+   */
+  setRadioStatic(playing: boolean): void {
+    if (!this.ctx) return;
+    const gain = this.loopFor('static', () => {
+      const band = this.ctx!.createBiquadFilter();
+      band.type = 'bandpass';
+      band.frequency.value = 1800;
+      band.Q.value = 0.4;
+      return band;
+    });
+    gain?.gain.setTargetAtTime(playing ? 0.16 : 0, this.ctx.currentTime, playing ? 0.2 : 0.3);
+  }
+
+  /** A seized handwheel: dry metal grinding a quarter turn. */
+  playValveTurn(): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+    const duration = 0.55;
+
+    const length = Math.floor(this.ctx.sampleRate * duration);
+    const buffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) {
+      const grain = Math.random() < 0.5 ? 1 : 0.25;
+      data[i] = (Math.random() * 2 - 1) * grain * (1 - i / length);
+    }
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = 1.6;
+
+    const scrape = this.ctx.createBiquadFilter();
+    scrape.type = 'bandpass';
+    scrape.frequency.value = 2600;
+    scrape.Q.value = 1.4;
+
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0.14;
+    source.connect(scrape);
+    scrape.connect(gain);
+    gain.connect(this.masterGain);
+    gain.gain.setTargetAtTime(0, now + duration - 0.1, 0.08);
+    source.start(now);
+
+    const creak = this.ctx.createOscillator();
+    creak.type = 'sawtooth';
+    creak.frequency.setValueAtTime(74, now);
+    creak.frequency.linearRampToValueAtTime(58, now + duration);
+    const creakGain = this.ctx.createGain();
+    creakGain.gain.value = 0;
+    creak.connect(creakGain);
+    creakGain.connect(this.masterGain);
+    creakGain.gain.setTargetAtTime(0.05, now, 0.12);
+    creakGain.gain.setTargetAtTime(0, now + duration - 0.05, 0.1);
+    creak.start(now);
+    creak.stop(now + duration);
+  }
+
+  /** Rummaging: glass and tin shifting about in a bin. */
+  playRummage(): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+    for (let i = 0; i < 5; i++) {
+      const at = now + i * 0.09 + Math.random() * 0.05;
+      const clink = this.ctx.createOscillator();
+      clink.type = 'triangle';
+      clink.frequency.setValueAtTime(700 + Math.random() * 1500, at);
+      const gain = this.ctx.createGain();
+      gain.gain.value = 0;
+      clink.connect(gain);
+      gain.connect(this.masterGain);
+      gain.gain.setTargetAtTime(0.05 + Math.random() * 0.05, at, 0.004);
+      gain.gain.setTargetAtTime(0, at + 0.05, 0.05);
+      clink.start(at);
+      clink.stop(at + 0.25);
+    }
+  }
+
   setRaining(raining: boolean): void {
     if (!this.ctx || !this.masterGain) return;
 

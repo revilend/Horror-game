@@ -35,6 +35,7 @@ export class Player {
   /** Called whenever a footstep should be heard. */
   onFootstep: ((running: boolean) => void) | null = null;
 
+
   private yaw = 0;
   private pitch = 0;
   private headBobPhase = 0;
@@ -249,7 +250,7 @@ export class Player {
           if (this.joystickWrap) {
             this.joystickWrap.style.left = `${t.clientX - 55}px`;
             this.joystickWrap.style.top = `${t.clientY - 55}px`;
-            this.joystickWrap.style.opacity = '1';
+            this.joystickWrap.style.opacity = '1'; this.joystickWrap.classList.add('active');
           }
           if (this.joystickKnob) this.joystickKnob.style.transform = 'translate(0,0)';
         } else if (t.clientX >= halfW && this.lookTouchId === null) {
@@ -308,7 +309,7 @@ export class Player {
           if (this.joystickKnob) this.joystickKnob.style.transform = 'translate(0,0)';
           // Floating joystick: it leaves with the thumb, so it never covers
           // the corridor while the player is looking around.
-          if (this.joystickWrap) this.joystickWrap.style.opacity = '0';
+          if (this.joystickWrap) { this.joystickWrap.style.opacity = '0.18'; this.joystickWrap.classList.remove('active'); }
         }
         if (ct.identifier === this.lookTouchId) {
           this.lookTouchId = null;

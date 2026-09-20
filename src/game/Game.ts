@@ -22,10 +22,19 @@ import {
   advanceDoor,
   advanceDrawer,
   advanceLocker,
+  type DoorChain,
   type DoorFixture,
   type DrawerFixture,
   type LockerFixture,
 } from './Fixtures';
+import { advanceInteractable, type Interactable } from './Interactables';
+import {
+  QUEST_STAGES,
+  TOTAL_QUESTS,
+  activeQuestIndex,
+  newQuestFlags,
+  type QuestFlags,
+} from './Quests';
 import { Player } from './Player';
 import { Monster } from './Monster';
 import { HorrorEffects } from './HorrorEffects';
@@ -73,9 +82,22 @@ type Interaction =
 type FixtureTarget =
   | { kind: 'door'; label: string; door: DoorFixture }
   | { kind: 'drawer'; label: string; desk: DrawerFixture }
-  | { kind: 'locker'; label: string; locker: LockerFixture };
+  | { kind: 'locker'; label: string; locker: LockerFixture }
+  | { kind: 'prop'; label: string; prop: Interactable }
+  | { kind: 'chain'; label: string; chain: DoorChain };
 
 /** How far a fixture can be worked from, in metres. */
+
+/** The box a braced cart bars a doorway with. */
+function cartFootprint(cart: Interactable): THREE.Box3 {
+  const half = 0.42;
+  const { x, z } = cart.group.position;
+  return new THREE.Box3(
+    new THREE.Vector3(x - half, 0, z - half),
+    new THREE.Vector3(x + half, 1.15, z + half),
+  );
+}
+
 const FIXTURE_REACH = 2.4;
 /** Fixtures further away than this are hidden and skipped entirely. */
 const FIXTURE_RADIUS = 30;
@@ -105,6 +127,10 @@ const MAX_HEALTH = 100;
 const MONSTER_DAMAGE = 22;
 const INVULNERABLE_TIME = 2.6;
 const TOTAL_KEYS = 3;
+/** Live cells the generator panel needs before the building comes up. */
+const FUSES_TO_POWER = 2;
+/** The deck index of the clinic lobby - where the reception desk stands. */
+const CLINIC_DECK = 1;
 const TOTAL_NOTES = 20;
 const BATTERY_DRAIN = 0.4;
 const BATTERY_RECOVER = 2.4;
@@ -287,6 +313,15 @@ export class Game {
   private doors: DoorFixture[] = [];
   private desks: DrawerFixture[] = [];
   private lockers: LockerFixture[] = [];
+  /** Touchable props: switches, cabinets, taps, valves, the van. */
+  private props: Interactable[] = [];
+  /** Doors held shut by a padlock or a chain until the lock is beaten. */
+  private chains: DoorChain[] = [];
+  /** The fifteen-stage questline: what is done, and which stage is up. */
+  private questFlags: QuestFlags = newQuestFlags();
+  private questIndex = -1;
+  /** Live fuses seated in the generator panel. It takes two. */
+  private fusesSeated = 0;
   /** What the action button would work right now, if anything. */
   private fixtureTarget: FixtureTarget | null = null;
   private fixturePrompt: HTMLElement | null = null;
@@ -411,8 +446,9 @@ export class Game {
 
     this.monster = new Monster(this.mapInfo.grid, this.mapInfo.monsterSpawn);
     this.monster.addToScene(this.scene);
-    this.monster.setColliders(this.mapInfo.colliders);
+    this.refreshMonsterColliders();
     this.monster.onGrowl = () => this.audio?.playGrowl();
+    this.monster.onFootstep = () => this.audio?.playDoctorStep();
 
     if (this.minimapPanel && !this.minimap) this.minimap = new Minimap(this.minimapPanel);
     this.minimap?.attach(this.mapInfo);
@@ -587,6 +623,43 @@ export class Game {
       );
       light.distance = 10;
       this.effects.addFlickerLight(light, 0.72);
+    }
+  }
+
+  /**
+   * Distinct coloured lights inside key rooms so every floor feels unique.
+   * Only the rooms closest to the player are lit, keeping the draw budget low.
+   */
+  private addRoomThemes(): void {
+    if (!this.mapInfo || !this.effects) return;
+    const CELL = 4;
+
+    // [roomKey, colourHex, radius]
+    const themes: Array<[string, number, number]> = [
+      ['h', 0x55ffaa, 9],   // Operating Theatre — sickly green
+      ['o', 0x4499ff, 8],   // Morgue — cold blue
+      ['O', 0x4499ff, 8],   // Morgue 2 (B1) — cold blue
+      ['A', 0xffaa33, 8],   // Chief Surgeon — warm amber
+      ['M', 0xff2222, 10],  // Boiler Room — pulsing red
+      ['q', 0xcccccc, 7],   // Shower Room — stark white
+      ['Q', 0x6633cc, 8],   // Incubator Room — eerie violet
+      ['S', 0xff4444, 8],   // Isolation Ward — danger red
+      ['G', 0x88ccff, 7],   // Physiotherapy — cool blue
+      ['T', 0xff6600, 8],   // Electotherapy — electric orange
+      ['U', 0x44dddd, 7],   // Hydrotherapy — teal
+      ['X', 0xffdd44, 6],   // Roof Access — warm yellow
+    ];
+
+    for (const [key, colour, radius] of themes) {
+      // Find the room's centre in world coords
+      const meta = this.mapInfo.rooms.find((r) => r.key === key);
+      if (!meta) continue;
+      const cx = ((meta.col1 + meta.col2) / 2) * CELL;
+      const cz = ((meta.row1 + meta.row2) / 2) * CELL;
+      const light = this.effects.createWallLight(cx, 2.8, cz, colour);
+      light.distance = radius;
+      this.effects.addFlickerLight(light, 0.4);
+      this.scene?.add(light);
     }
   }
 
@@ -1348,7 +1421,8 @@ export class Game {
     }
 
     // The lift bakes its labels into canvases, so it repaints on a language
-    // change rather than being rebuilt with the level.
+    // change rather than being rebuilt with the level: the car plate, the five
+    // button plates and every landing sign are all repainted from here.
     onLanguageChange(() => {
       if (this.elevator) relocalizeElevator(this.elevator);
       for (const button of this.liftFloorButtons) {
@@ -1483,6 +1557,18 @@ export class Game {
       }
     }
 
+    // No floor is reachable from another on foot any more, so the creature
+    // cannot walk after the player: it comes over the way the player did. It
+    // is put down at the far end of the new floor, well away from the cage, so
+    // stepping out is never an instant ambush - but no floor is safe either.
+    if (this.monster && this.mapInfo) {
+      const spawn = this.mapInfo.deckPatrolSpawns[deckIndex];
+      if (spawn) {
+        this.monster.reset(spawn);
+        window.setTimeout(() => this.showMessage(t('lift.followed'), 3200), 2300);
+      }
+    }
+
     const deck = ELEVATOR_DECKS[deckIndex];
     if (deck) this.showMessage(t('lift.arrived', { floor: L(deck.name) }), 2600);
   }
@@ -1593,6 +1679,8 @@ export class Game {
     this.doors = map.doors;
     this.desks = map.desks;
     this.lockers = map.lockers;
+    this.props = map.interactables;
+    this.chains = map.chainedDoors;
 
     this.fixtureTarget = null;
     this.hidingInLocker = null;
@@ -1672,8 +1760,13 @@ export class Game {
       }
       door.hinge.visible = true;
 
+      // A chained door is not a door to anybody until the lock is beaten: not
+      // to the player, and not to the creature shoving it open on its way past.
+      const chain = this.chainAt(door);
+      if (chain && !chain.beaten) door.target = 0;
+
       // Something heavy is coming through: the leaf is shoved open ahead of it.
-      if (monster && !door.swung) {
+      if (monster && !door.swung && !chain) {
         const creatureDistance = Math.hypot(door.centre.x - monster.x, door.centre.z - monster.z);
         if (creatureDistance < 2.4) {
           door.swung = true;
@@ -1684,13 +1777,34 @@ export class Game {
       advanceDoor(door, dt);
       // A leaf that is still opening is left passable, so nobody is ever
       // trapped between the frame and a door swinging shut on them.
-      if (door.open < 0.35 && door.target < 0.5) blockers.push(door.box);
+      if (door.open < 0.5) blockers.push(door.box);
+    }
+
+    // --- Braced crash carts ---------------------------------------------
+    // A cart with its brake down stops being a prop and becomes furniture. It
+    // blocks the player here, and it joins the creature's collider set (see
+    // `refreshMonsterColliders`), which is what makes a braced cart in a
+    // doorway an actual barricade rather than a decoration.
+    for (const cart of this.bracedCarts) {
+      const distance = Math.hypot(cart.group.position.x - position.x, cart.group.position.z - position.z);
+      if (distance > FIXTURE_RADIUS) continue;
+      blockers.push(cartFootprint(cart));
     }
     this.player.setBlockers(blockers);
 
     // --- Drawers and lockers --------------------------------------------
     for (const desk of this.desks) advanceDrawer(desk, dt);
     for (const locker of this.lockers) advanceLocker(locker, dt);
+
+    // Props animate themselves. Only the ones near the player are dipped into,
+    // for the same reason the doors are culled: a wheel turning in an empty
+    // wing is a frame nobody will ever see.
+    for (const prop of this.props) {
+      const distance = Math.hypot(prop.group.position.x - position.x, prop.group.position.z - position.z);
+      prop.group.visible = distance < FIXTURE_RADIUS;
+      if (!prop.group.visible) continue;
+      advanceInteractable(prop, dt, this.elapsed);
+    }
 
     // --- What the action button would work ------------------------------
     let best: FixtureTarget | null = null;
@@ -1701,6 +1815,9 @@ export class Game {
       let bestDistance = FIXTURE_REACH;
 
       for (const door of this.doors) {
+        // A chained door is offered as a lock, not as a door: the two prompts
+        // never compete for the same press.
+        if (this.chainAt(door)) continue;
         const distance = Math.hypot(door.centre.x - position.x, door.centre.z - position.z);
         if (distance >= bestDistance) continue;
         bestDistance = distance;
@@ -1724,11 +1841,50 @@ export class Game {
         bestDistance = distance;
         best = { kind: 'locker', label: t('act.lockerEnter'), locker };
       }
+
+      for (const prop of this.props) {
+        if (!prop.group.visible) continue;
+        const distance = Math.hypot(
+          prop.group.position.x - position.x,
+          prop.group.position.z - position.z,
+        );
+        if (distance >= bestDistance) continue;
+        bestDistance = distance;
+        best = { kind: 'prop', label: this.propLabel(prop), prop };
+      }
+
+      for (const chain of this.chains) {
+        if (chain.beaten) continue;
+        const distance = Math.hypot(chain.centre.x - position.x, chain.centre.z - position.z);
+        if (distance >= bestDistance) continue;
+        bestDistance = distance;
+        best = { kind: 'chain', label: this.chainLabel(chain), chain };
+      }
     }
 
     this.fixtureTarget = best;
     this.fixturePrompt?.classList.toggle('show', best !== null);
     if (best && this.fixtureLabel) this.fixtureLabel.textContent = best.label;
+  }
+
+  /** Every cart currently standing with its brake down. */
+  private get bracedCarts(): Interactable[] {
+    return this.props.filter((prop) => prop.kind === 'cart' && prop.on);
+  }
+
+  /**
+   * Hands the creature the furniture it has to walk around, braced carts
+   * included. Called whenever those carts change, and on every floor change,
+   * so a barricade never has to survive a ride in the creature's memory.
+   */
+  private refreshMonsterColliders(): void {
+    if (!this.monster || !this.mapInfo) return;
+    const carts = this.bracedCarts.map((cart) => ({
+      x: cart.group.position.x,
+      z: cart.group.position.z,
+      r: 0.85,
+    }));
+    this.monster.setColliders([...this.mapInfo.colliders, ...carts]);
   }
 
   /** What the drawer prompt should say, given what is still inside it. */
@@ -1770,8 +1926,363 @@ export class Game {
       return;
     }
 
+    if (target.kind === 'chain') {
+      this.useChain(target.chain);
+      return;
+    }
+
+    if (target.kind === 'prop') {
+      this.useProp(target.prop);
+      return;
+    }
+
     if (this.hidingInLocker) this.leaveLocker();
     else this.enterLocker(target.locker);
+  }
+
+  /**
+   * The lock across a door, worked with whatever is in the player's hands.
+   *
+   * Neither lock is a consumable the player can waste: the acid is used up
+   * melting the shackle, the cutters are a tool and stay in the bag.
+   */
+  private useChain(chain: DoorChain): void {
+    if (chain.lock === 'padlock') {
+      if (!this.inventory?.has('acid')) {
+        this.showMessage(t('msg.chainAcid'), 3600);
+        return;
+      }
+      this.inventory.take('acid');
+      this.setQuestFlag({ padlock: true });
+      this.audio?.playDoorUnlock();
+      this.showMessage(t('msg.padlockMelted'), 4000);
+    } else {
+      if (!this.inventory?.has('boltcutters')) {
+        this.showMessage(t('msg.chainCutters'), 3600);
+        return;
+      }
+      this.setQuestFlag({ gateCut: true });
+      this.audio?.playDoorUnlock();
+      this.addShake(0.2, 0.6);
+      this.showMessage(t('msg.chainCut'), 4000);
+    }
+
+    chain.beaten = true;
+    chain.mesh.parent?.remove(chain.mesh);
+    chain.door.target = 1;
+    chain.door.swung = true;
+    this.audio?.playDoorSwing(true);
+    if (this.fixtureTarget?.kind === 'chain') this.fixtureTarget = null;
+  }
+
+  /** The nearest chain on a given door, if that door is chained at all. */
+  private chainAt(door: DoorFixture): DoorChain | null {
+    for (const chain of this.chains) {
+      if (chain.door === door) return chain;
+    }
+    return null;
+  }
+
+  /** What the prompt says about a lock: which tool it wants. */
+  private chainLabel(chain: DoorChain): string {
+    if (chain.lock === 'padlock') {
+      return this.inventory?.has('acid') ? t('act.meltPadlock') : t('act.padlockLocked');
+    }
+    return this.inventory?.has('boltcutters') ? t('act.cutChain') : t('act.chainLocked');
+  }
+
+  /** What the prompt should say about a prop, given what state it is in. */
+  private propLabel(prop: Interactable): string {
+    switch (prop.kind) {
+      case 'switch':
+        return prop.on ? t('act.lightsOff') : t('act.lightsOn');
+      case 'sink':
+        return prop.on ? t('act.tapOff') : t('act.tapOn');
+      case 'radio':
+        return prop.on ? t('act.radioOff') : t('act.radioOn');
+      case 'valve':
+        return prop.turns >= 4 ? t('act.valveShut') : t('act.valveTurn');
+      case 'lightbox':
+        return prop.on ? t('act.lightboxOff') : t('act.lightboxOn');
+      case 'monitor':
+        return prop.on ? t('act.cctvOff') : t('act.cctvOn');
+      case 'mirror':
+        return t('act.mirror');
+      case 'extinguisher':
+        return prop.spent ? t('act.extinguisherEmpty') : t('act.extinguisher');
+      case 'cot':
+        return prop.spent ? t('act.cotSearched') : t('act.cot');
+      case 'bin':
+        return prop.spent ? t('act.binEmpty') : t('act.bin');
+      case 'cart':
+        return prop.on ? t('act.cartBraced') : t('act.cart');
+      case 'van':
+        if (prop.spent) return t('act.vanIgnition');
+        return prop.open > 0.5 ? t('act.vanBattery') : t('act.vanBonnet');
+      case 'cabinet':
+        if (prop.locked && !this.questFlags.cctv) return t('act.cabinetLocked');
+        if (prop.open < 0.5) return t('act.cabinetOpen');
+        return prop.loot ? t('act.takeLoot') : t('act.cabinetShut');
+      case 'freezer':
+        if (!this.questFlags.code) return t('act.freezerLocked');
+        if (prop.open < 0.5) return t('act.freezerOpen');
+        return prop.loot ? t('act.takeLoot') : t('act.cabinetShut');
+      case 'safe':
+        if (prop.loot && prop.open > 0.5) return t('act.takeLoot');
+        if (prop.open > 0.5) return t('act.cabinetShut');
+        return t('act.safeOpen');
+    }
+  }
+
+  /**
+   * Works a prop. Every kind answers the action button in its own way, and
+   * several of them are how the questline moves: the taps and the radios are
+   * atmosphere, but the cabinets and the freezers are the run.
+   */
+  private useProp(prop: Interactable): void {
+    switch (prop.kind) {
+      case 'switch': {
+        prop.on = !prop.on;
+        prop.uses++;
+        this.audio?.playSwitchClick(prop.on);
+        this.effects?.setLightsAround(prop.centre.x, prop.centre.z, 12, prop.on);
+        this.showMessage(prop.on ? t('msg.lightsOn') : t('msg.lightsOff'), 2400);
+        return;
+      }
+
+      case 'sink': {
+        prop.on = !prop.on;
+        prop.uses++;
+        this.audio?.setWaterRunning(prop.on);
+        this.showMessage(prop.on ? t('msg.tapOn') : t('msg.tapOff'), 2600);
+        return;
+      }
+
+      case 'cart': {
+        prop.on = !prop.on;
+        prop.uses++;
+        // A heavy mechanical clank: the brake shoes biting the castors.
+        this.audio?.playElevatorGate();
+        this.refreshMonsterColliders();
+        this.showMessage(prop.on ? t('msg.cartBraced') : t('msg.cartReleased'), 3200);
+        return;
+      }
+
+      case 'radio': {
+        prop.on = !prop.on;
+        prop.uses++;
+        this.audio?.setRadioStatic(prop.on);
+        if (prop.on) {
+          // The whole point of the radio: noise somewhere that is not here.
+          this.monster?.goInvestigateAt(prop.group.position);
+          this.showMessage(t('msg.radioOn'), 3200);
+        } else {
+          this.showMessage(t('msg.radioOff'), 2200);
+        }
+        return;
+      }
+
+      case 'valve': {
+        if (prop.turns >= 4) {
+          this.showMessage(t('msg.valveShut'), 2200);
+          return;
+        }
+        prop.turns++;
+        this.audio?.playValveTurn();
+        if (prop.turns >= 4) {
+          this.setQuestFlag({ valves: this.questFlags.valves + 1 });
+          this.showMessage(t('msg.valveSealed', { left: Math.max(0, 3 - this.questFlags.valves) }), 3200);
+        }
+        return;
+      }
+
+      case 'lightbox': {
+        prop.on = !prop.on;
+        prop.uses++;
+        this.audio?.playElectricBuzz();
+        if (prop.on) {
+          this.setQuestFlag({ code: true });
+          this.showMessage(t('msg.xrayCode'), 6000);
+        }
+        return;
+      }
+
+      case 'monitor': {
+        prop.on = !prop.on;
+        prop.uses++;
+        this.audio?.playElectricBuzz();
+        if (prop.on) {
+          this.setQuestFlag({ cctv: true });
+          this.showMessage(t('msg.cctvOn'), 4400);
+        }
+        return;
+      }
+
+      case 'mirror': {
+        prop.target = prop.target > 0.5 ? 0 : 1;
+        prop.uses++;
+        this.audio?.playCreepySound();
+        if (!this.questFlags.mirror) {
+          this.setQuestFlag({ mirror: true });
+          this.showMessage(t('msg.mirror'), 4600);
+        } else {
+          this.showMessage(t('msg.mirrorAgain'), 2400);
+        }
+        return;
+      }
+
+      case 'cot': {
+        prop.uses++;
+        this.audio?.playRummage();
+        prop.spent = true;
+        if (!this.questFlags.lockpick) {
+          this.setQuestFlag({ lockpick: true });
+          this.showMessage(t('msg.lockpick'), 4000);
+        } else {
+          this.showMessage(t('msg.cotEmpty'), 2400);
+        }
+        return;
+      }
+
+      case 'bin': {
+        prop.uses++;
+        this.audio?.playRummage();
+        prop.spent = true;
+        if (prop.uses === 1) {
+          // A bottle is the run's only thrown weapon, so the bins are worth
+          // opening even when the tracker has stopped caring about them.
+          this.inventory?.add('bottle');
+          this.showMessage(t('msg.binFind'), 3000);
+        } else {
+          this.showMessage(t('msg.binEmpty'), 2200);
+        }
+        return;
+      }
+
+      case 'extinguisher': {
+        if (prop.spent) {
+          this.showMessage(t('msg.extinguisherEmpty'), 2200);
+          return;
+        }
+        prop.spent = true;
+        this.setQuestFlag({ extinguisher: true });
+        this.audio?.playElectricBuzz();
+        // A face full of foam buys a few seconds, which is all it is for.
+        this.monster?.stun(4.5);
+        this.showMessage(t('msg.extinguisher'), 4000);
+        return;
+      }
+
+      case 'cabinet':
+      case 'freezer':
+      case 'safe':
+      case 'van': {
+        this.workContainer(prop);
+        return;
+      }
+    }
+  }
+
+  /**
+   * The props that open and hand something over: cabinets, the morgue freezer,
+   * the safe behind the painting, and the ambulance.
+   */
+  private workContainer(prop: Interactable): void {
+    // Two of them are gated: the pharmacy cabinets want the security room up,
+    // and freezer #12 wants the code off the lightbox.
+    if (prop.kind === 'cabinet' && prop.locked && !this.questFlags.cctv) {
+      this.showMessage(t('msg.cabinetLocked'), 3400);
+      return;
+    }
+    if (prop.kind === 'freezer' && !this.questFlags.code) {
+      this.showMessage(t('msg.freezerLocked'), 3400);
+      return;
+    }
+
+    if (prop.open < 0.5) {
+      prop.target = 1;
+      prop.uses++;
+      this.audio?.playDrawerSlide();
+      if (prop.kind === 'safe' && prop.uses === 1) this.showMessage(t('msg.paintingAside'), 3400);
+      return;
+    }
+
+    if (prop.kind === 'van') {
+      this.startVan(prop);
+      return;
+    }
+
+    if (prop.loot) {
+      this.grantLoot(prop);
+      return;
+    }
+
+    prop.target = 0;
+    this.audio?.playDrawerSlide();
+  }
+
+  /** Empties a prop into the player's hands, and flags what came out of it. */
+  private grantLoot(prop: Interactable): void {
+    const loot = prop.loot;
+    if (!loot) return;
+    prop.loot = null;
+    prop.spent = true;
+    this.inventory?.add(loot);
+    this.audio?.playKeyPickup();
+
+    if (loot === 'acid') this.setQuestFlag({ acid: true });
+    if (loot === 'boltcutters') this.setQuestFlag({ cutters: true });
+    if (loot === 'ignition') this.setQuestFlag({ ignition: true });
+    if (loot === 'battery') this.setQuestFlag({ battery: true });
+
+    this.showMessage(
+      t('msg.lootTaken', { item: t(`item.${loot}.name`), hint: t(`item.${loot}.hint`) }),
+      3800,
+    );
+  }
+
+  /**
+   * The ambulance: a battery cell, then the ignition. Starting it is also an
+   * ending - the alternator carries the gate motor, so the yard lights come up
+   * and the run finishes at the gate exactly as the substation route does.
+   */
+  private startVan(prop: Interactable): void {
+    if (prop.spent) {
+      this.showMessage(t('msg.vanRunning'), 3000);
+      return;
+    }
+    if (!this.inventory?.has('battery')) {
+      this.showMessage(t('msg.vanNeedsBattery'), 3600);
+      return;
+    }
+
+    this.inventory.take('battery');
+    prop.spent = true;
+    prop.on = true;
+
+    this.substationOn = true;
+    for (const material of this.mapInfo?.lampMaterials ?? []) material.emissiveIntensity = 1.5;
+    this.lightOutdoorLamps();
+    document.getElementById('power-icon')?.classList.add('collected');
+    this.audio?.playPowerOn();
+    this.addShake(0.5, 1.4);
+    this.setQuestFlag({ escaped: true });
+    this.showMessage(t('msg.vanRunning'), 5600);
+    this.unlockGate();
+  }
+
+  /** Marks a quest flag and refreshes the tracker. */
+  private setQuestFlag(update: Partial<QuestFlags>): void {
+    this.questFlags = { ...this.questFlags, ...update };
+    const index = activeQuestIndex(this.questFlags);
+    if (index !== this.questIndex) {
+      const stage = QUEST_STAGES[Math.min(index, TOTAL_QUESTS - 1)];
+      if (index > this.questIndex && this.questIndex >= 0) {
+        this.showMessage(t('msg.stageDone', { task: L(stage.text) }), 4200);
+      }
+      this.questIndex = index;
+    }
+    this.updateObjective();
   }
 
   /** Empties a drawer into the player's hands. */
@@ -1798,6 +2309,10 @@ export class Game {
     this.inventory?.add(item);
     this.audio?.playKeyPickup();
     this.showMessage(t('msg.drawerLoot', { item: t(`item.${item}.name`) }), 2400);
+
+    // The reception desk is the one on the clinic floor, and its drawer is
+    // where the ward plan and the security key live.
+    if (floorAt(desk.row) === CLINIC_DECK) this.setQuestFlag({ blueprint: true });
   }
 
   /** Opens the locker, climbs in and shuts the door behind the player. */
@@ -1892,7 +2407,7 @@ export class Game {
       this.effects?.reset();
       this.effects?.setFluorescentMaterials(this.mapInfo.fluorescentMaterials);
 
-      this.monster?.setColliders(this.mapInfo.colliders);
+      this.refreshMonsterColliders();
 
       if (this.effects) this.flashlight = this.effects.createFlashlight(this.camera);
 
@@ -1909,6 +2424,9 @@ export class Game {
     this.keysCollected = 0;
     this.notesCollected = 0;
     this.cardCollected = false;
+    this.questFlags = newQuestFlags();
+    this.questIndex = -1;
+    this.fusesSeated = 0;
     this.inventory?.clear();
     this.pickups.length = 0;
     this.boardedDoors = [];
@@ -2179,6 +2697,14 @@ export class Game {
       return;
     }
     this.inventory.take('fuse');
+    this.fusesSeated++;
+    this.setQuestFlag({ fuses: this.fusesSeated });
+
+    // The panel takes two live cells. One seated fuse is progress, not power.
+    if (this.fusesSeated < FUSES_TO_POWER) {
+      this.showMessage(t('msg.fuseSeated', { done: this.fusesSeated, total: FUSES_TO_POWER }), 3200);
+      return;
+    }
     this.restorePower();
   }
 
@@ -2209,6 +2735,12 @@ export class Game {
     this.audio?.playKeyPickup();
     this.inventory?.add(pickup.item);
     this.marksDirty = true;
+
+    // The cell in the courtyard is the ambulance's, not the torch's: the
+    // tag is what tells the two twelve-volt batteries apart.
+    if (pickup.object.userData.pickupTag === 'shedBattery') {
+      this.setQuestFlag({ battery: true });
+    }
 
     if (pickup.item === 'key') {
       this.keysCollected = this.inventory?.totalKeys ?? 0;
@@ -2800,6 +3332,17 @@ export class Game {
       this.objectiveText.textContent = t('obj.gate');
       this.phase = 'gate';
     }
+
+    // The fifteen-stage tracker leads the HUD. The phase text above still
+    // decides `phase`, which the rest of the run keys off, so both run: one
+    // for the game, one for the player.
+    const stage = Math.min(activeQuestIndex(this.questFlags), TOTAL_QUESTS - 1);
+    this.questIndex = activeQuestIndex(this.questFlags);
+    this.objectiveText.textContent = t('obj.quest', {
+      index: stage + 1,
+      total: TOTAL_QUESTS,
+      task: L(QUEST_STAGES[stage].text),
+    });
   }
 
   private showMessage(text: string, duration = 2600): void {
@@ -2928,6 +3471,7 @@ export class Game {
   private onWin(): void {
     if (this.state === 'win' || this.state === 'gameover') return;
     this.state = 'win';
+    this.setQuestFlag({ escaped: true });
 
     this.audio?.stopAmbience();
     this.audio?.setRaining(false);

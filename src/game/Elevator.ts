@@ -46,7 +46,7 @@ export const ELEVATOR_DECKS: ElevatorDeck[] = [
     landingRow: 28,
     cageRow: 27,
     label: { uz: '1Q', en: '1F', ru: '1Э' },
-    name: { uz: '1-QAVAT QABULXONA', en: '1F CLINIC LOBBY', ru: '1 ЭТАЖ ПРИЁМНАЯ' },
+    name: { uz: '1-QAVAT KLINIKA', en: '1F CLINIC', ru: '1 ЭТАЖ КЛИНИКА' },
     sub: { uz: 'qabulxona va dorixona', en: 'reception and pharmacy', ru: 'приёмная и аптека' },
   },
   {
@@ -54,8 +54,8 @@ export const ELEVATOR_DECKS: ElevatorDeck[] = [
     landingRow: 34,
     cageRow: 33,
     label: { uz: '2Q', en: '2F', ru: '2Э' },
-    name: { uz: '2-QAVAT PALATALAR', en: '2F PATIENT WARDS', ru: '2 ЭТАЖ ПАЛАТЫ' },
-    sub: { uz: 'palatalar va kir yuvish', en: 'wards and laundry', ru: 'палаты и прачечная' },
+    name: { uz: '2-QAVAT JARROHLIK', en: '2F SURGERY', ru: '2 ЭТАЖ ХИРУРГИЯ' },
+    sub: { uz: 'operatsiya va 404-palata', en: 'theatre and room 404', ru: 'операционная и палата 404' },
   },
   {
     id: 'f3',
@@ -63,9 +63,9 @@ export const ELEVATOR_DECKS: ElevatorDeck[] = [
     cageRow: 49,
     label: { uz: '3Q', en: '3F', ru: '3Э' },
     name: {
-      uz: '3-QAVAT DIREKTOR QANOTI',
-      en: '3F DIRECTOR WING',
-      ru: '3 ЭТАЖ КРЫЛО ДИРЕКТОРА',
+      uz: '3-QAVAT DIREKTOR ARIS',
+      en: '3F DIRECTOR ARIS',
+      ru: '3 ЭТАЖ ДИРЕКТОР АРИС',
     },
     sub: {
       uz: 'izolyator va elektroterapiya',

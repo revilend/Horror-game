@@ -45,15 +45,26 @@ import {
   type ElevatorHandle,
 } from './Elevator';
 import {
+  createDoorChain,
   createHideLocker,
   createSearchDesk,
   createSwingDoor,
   seatDoor,
+  type DoorChain,
   type DoorFixture,
   type DrawerFixture,
   type DrawerLoot,
   type LockerFixture,
 } from './Fixtures';
+import {
+  createInteractable,
+  interactableRadius,
+  makeInteractableMaterials,
+  placeInteractable,
+  type Interactable,
+  type InteractableKind,
+  type LootId,
+} from './Interactables';
 import {
   createAsphaltTexture,
   createBloodTextTexture,
@@ -133,7 +144,9 @@ const LAYOUT = [
   '#nnn#.#oo#pp#.#qq#rr#.#ssss#',
   '#nnn+.+oo#pp+.+qq#rr+.+ssss#',
   '#nnn#.#oo#pp#.#qq#rr#.#ssss#',
-  // Stairwells cut through the old basement floor into the floors below
+  // The wall row between the lobby and the surgery floor. The sealing pass
+  // below walls every opening in it, so the only cell left is the 2F lift
+  // recess - which is the one way up.
   '#####+###############+######',
   // ---- Second floor ----------------------------------------------------
   '#..........................#',
@@ -177,10 +190,14 @@ const OUTDOOR_END = OUTDOOR_ROWS - 1;
 export function floorAt(row: number): number {
   if (row < 0 || row >= ROWS) return -1;
   if (row < OUTDOOR_ROWS) return 4; // rooftop: the grounds and the escape gate
-  if (row <= 33) return 1; // 1F clinic lobby
-  if (row <= 43) return 2; // 2F patient wards
-  if (row <= 49) return 0; // B1 basement
-  return 3; // 3F director wing
+  // The wall row between two floors belongs to the floor whose lift cage is
+  // recessed into it - 33, 43 and 49 are those three cage rows - because that
+  // recess is the only cell in the row anyone can stand in, and standing in
+  // the mouth of the cage should name the floor you are stepping onto.
+  if (row <= 32) return 1; // 1F clinic lobby
+  if (row <= 42) return 2; // 2F patient wards (row 33 is the 2F cage recess)
+  if (row <= 48) return 0; // basement (row 43 is the B1 cage recess)
+  return 3; // director wing (row 49 is the 3F cage recess)
 }
 
 /** Localized name of the deck with that index, for the HUD. */
@@ -204,20 +221,74 @@ interface WorldFixtures {
   doors: DoorFixture[];
   desks: DrawerFixture[];
   lockers: LockerFixture[];
+  /** Everything the action button can work that is not a door or a drawer. */
+  interactables: Interactable[];
+  /** Doors held shut by a lock the player has to beat. */
+  chainedDoors: DoorChain[];
 }
 
-/** Everything the level builder lays out on its own. */
-type BaseMapInfo = Omit<MapInfo, keyof WorldFixtures>;
+/**
+ * Everything the level builder lays out on its own. The elevator's fixtures
+ * and the per-floor patrol spawns are left out: both are worked out by
+ * `buildWorld` from the finished grid instead.
+ */
+type BaseMapInfo = Omit<MapInfo, keyof WorldFixtures | 'deckPatrolSpawns'>;
 
 /** Handed from buildWorldBase up to buildWorld while a world is being built. */
 let pendingFixtures: WorldFixtures | null = null;
 
+/* -------------------------------------------------------------------------
+ * SEALED FLOORS
+ *
+ * The asylum is one flat grid, so "a floor" is a band of rows and the only
+ * thing holding the bands apart is wall. The plan was drawn with the bands
+ * joined anyway - open corridor columns running straight through them, and the
+ * back doorways of the upper rooms opening into the floor below - which is why
+ * the whole building read as one endless hallway: you could walk from the
+ * lobby to the director's office without ever touching the lift.
+ *
+ * So the bands are sealed here, once, at module load, rather than by editing
+ * the plan above by hand: every row that ends a floor becomes solid wall, and
+ * the elevator's recess is cut back open afterwards, in the grid. That cut is
+ * the only way off a floor.
+ *
+ * The grounds are deliberately NOT sealed. The reception door drops the player
+ * into the courtyard and the run finishes at the main gate, and that one walk
+ * over the yard is the whole ending of the game.
+ * ---------------------------------------------------------------------- */
+
+/** True for a row inside the building rather than out in the grounds. */
+function isBuildingRow(row: number): boolean {
+  return row >= OUTDOOR_ROWS && row < ROWS && floorAt(row) !== 4;
+}
+
 /**
- * Retired. The broken stairwell that used to link the floors was replaced by
- * the cage elevator, so there is nothing left to climb between decks; the
- * binding is kept because the module's export list still mentions it.
+ * The row that ends each floor: the wall row between it and the floor beyond.
+ * Found from the same row-to-deck mapping the HUD uses, so adding a floor to
+ * the plan seals it without anyone having to remember this list.
  */
-const STAIR_CELLS: Array<{ row: number; col: number }> = [];
+const FLOOR_BOUNDARY_ROWS: number[] = [];
+for (let row = OUTDOOR_ROWS; row < ROWS - 1; row++) {
+  if (!isBuildingRow(row) || !isBuildingRow(row + 1)) continue;
+  if (floorAt(row) === floorAt(row + 1)) continue;
+  FLOOR_BOUNDARY_ROWS.push(row);
+}
+
+for (const row of FLOOR_BOUNDARY_ROWS) {
+  LAYOUT[row] = LAYOUT[row].replace(/[^#]/g, '#');
+}
+
+/** First and last row of a deck, so "this floor only" can be reasoned about. */
+function deckRows(deckIndex: number): { first: number; last: number } {
+  let first = -1;
+  let last = -1;
+  for (let row = 0; row < ROWS; row++) {
+    if (floorAt(row) !== deckIndex) continue;
+    if (first === -1) first = row;
+    last = row;
+  }
+  return { first, last };
+}
 
 /** Room letters that sit outside the building's walls. */
 const OUTDOOR_ROOM_CHARS = new Set(['t', 'u', 'v', 'w', 'x', 'y', 'z']);
@@ -296,6 +367,107 @@ const LOCKER_CELLS: Array<{ row: number; col: number; dz: number; dx: number; ya
 ];
 
 /* -------------------------------------------------------------------------
+ * INTERACTIVE PROPS
+ *
+ * Every anchor below is one of the cells the builder already validates - a
+ * desk, a locker, a key, the breaker - so the density of the world follows the
+ * density of the rooms that were hand-checked. The exact cell is worked out at
+ * build time: the placer walks outward from the anchor to the first cell a
+ * prop can legally stand in and refuses to reuse a cell, which is what keeps a
+ * prop out of a wall and out of a doorway.
+ *
+ * Kinds marked `wall` are mounted flat against the nearest wall; the rest
+ * stand on the floor.
+ * ---------------------------------------------------------------------- */
+
+interface PropPlan {
+  kind: InteractableKind;
+  anchor: { row: number; col: number };
+  /** Yaw in radians, for the few props that care which way they face. */
+  yaw?: number;
+  /** What is inside, if anything. */
+  loot?: LootId;
+  /** Shut until the CCTV room is up: the pharmacy cabinets. */
+  locked?: boolean;
+}
+
+/** Kinds that belong on a wall rather than in the middle of a room. */
+const WALL_KINDS = new Set<InteractableKind>(['switch', 'mirror', 'lightbox', 'extinguisher']);
+
+const PROP_PLAN: PropPlan[] = [
+  /* ---- 1F: clinic lobby, reception, pharmacy, store room ---------------- */
+  { kind: 'switch', anchor: { row: 28, col: 10 } },
+  { kind: 'switch', anchor: { row: 24, col: 25 } },
+  { kind: 'switch', anchor: { row: 20, col: 12 } },
+  { kind: 'cabinet', anchor: { row: 23, col: 8 } },
+  { kind: 'cabinet', anchor: { row: 31, col: 24 }, loot: 'bottle' },
+  { kind: 'cabinet', anchor: { row: 18, col: 23 }, loot: 'acid', locked: true },
+  { kind: 'cabinet', anchor: { row: 31, col: 16 }, loot: 'battery' },
+  { kind: 'bin', anchor: { row: 20, col: 4 } },
+  { kind: 'bin', anchor: { row: 31, col: 8 } },
+  { kind: 'bin', anchor: { row: 26, col: 14 } },
+  { kind: 'sink', anchor: { row: 28, col: 22 } },
+  { kind: 'sink', anchor: { row: 22, col: 18 } },
+  { kind: 'radio', anchor: { row: 24, col: 7 } },
+  { kind: 'monitor', anchor: { row: 25, col: 25 }, yaw: Math.PI },
+  { kind: 'cot', anchor: { row: 30, col: 12 } },
+  { kind: 'lightbox', anchor: { row: 29, col: 26 } },
+  { kind: 'extinguisher', anchor: { row: 21, col: 10 } },
+  // Crash carts live in corridors, where a braced one can actually be rolled
+  // into a doorway and made to mean something.
+  { kind: 'cart', anchor: { row: 20, col: 6 } },
+  { kind: 'cart', anchor: { row: 28, col: 20 } },
+
+  /* ---- 2F: surgical ward, Room 404, operating theatre ------------------- */
+  { kind: 'switch', anchor: { row: 34, col: 6 } },
+  { kind: 'switch', anchor: { row: 41, col: 24 } },
+  { kind: 'cot', anchor: { row: 36, col: 6 } },
+  { kind: 'mirror', anchor: { row: 37, col: 8 } },
+  { kind: 'cabinet', anchor: { row: 38, col: 20 }, loot: 'battery' },
+  { kind: 'cabinet', anchor: { row: 41, col: 10 }, loot: 'bottle' },
+  { kind: 'bin', anchor: { row: 35, col: 12 } },
+  { kind: 'bin', anchor: { row: 39, col: 26 } },
+  { kind: 'sink', anchor: { row: 40, col: 14 } },
+  { kind: 'radio', anchor: { row: 41, col: 22 } },
+  { kind: 'lightbox', anchor: { row: 37, col: 20 } },
+  { kind: 'extinguisher', anchor: { row: 35, col: 18 } },
+  { kind: 'cart', anchor: { row: 34, col: 12 } },
+  { kind: 'cart', anchor: { row: 40, col: 22 } },
+
+  /* ---- B1: boiler room, steam, morgue ---------------------------------- */
+  { kind: 'valve', anchor: { row: 45, col: 6 } },
+  { kind: 'valve', anchor: { row: 46, col: 18 } },
+  { kind: 'valve', anchor: { row: 47, col: 24 } },
+  { kind: 'lightbox', anchor: { row: 46, col: 12 } },
+  { kind: 'freezer', anchor: { row: 45, col: 20 }, loot: 'boltcutters', yaw: Math.PI },
+  { kind: 'bin', anchor: { row: 47, col: 10 } },
+  { kind: 'switch', anchor: { row: 44, col: 12 } },
+  { kind: 'sink', anchor: { row: 46, col: 4 } },
+  { kind: 'cot', anchor: { row: 48, col: 16 } },
+  { kind: 'cabinet', anchor: { row: 44, col: 20 }, loot: 'bottle' },
+  { kind: 'radio', anchor: { row: 48, col: 22 } },
+  { kind: 'cart', anchor: { row: 44, col: 8 } },
+
+  /* ---- 3F: director's wing -------------------------------------------- */
+  { kind: 'switch', anchor: { row: 52, col: 6 } },
+  { kind: 'switch', anchor: { row: 55, col: 20 } },
+  { kind: 'safe', anchor: { row: 53, col: 12 }, loot: 'ignition' },
+  { kind: 'cabinet', anchor: { row: 54, col: 18 }, loot: 'battery' },
+  { kind: 'bin', anchor: { row: 52, col: 20 } },
+  { kind: 'sink', anchor: { row: 53, col: 26 } },
+  { kind: 'radio', anchor: { row: 54, col: 8 } },
+  { kind: 'extinguisher', anchor: { row: 56, col: 10 } },
+  { kind: 'monitor', anchor: { row: 50, col: 8 }, yaw: Math.PI },
+  { kind: 'cart', anchor: { row: 50, col: 18 } },
+
+  /* ---- The grounds: the courtyard, the driveway and the van ----------- */
+  { kind: 'van', anchor: { row: 13, col: 20 }, yaw: Math.PI },
+  { kind: 'bin', anchor: { row: 8, col: 4 } },
+  { kind: 'radio', anchor: { row: 3, col: 10 } },
+  { kind: 'extinguisher', anchor: { row: 6, col: 22 } },
+];
+
+/* -------------------------------------------------------------------------
  * PUZZLE ITEMS
  *
  * Two of the run's goals are gated on something you have to find and carry:
@@ -308,6 +480,8 @@ const LOCKER_CELLS: Array<{ row: number; col: number; dz: number; dx: number; ya
 
 /** Store room, ground floor: the breaker's missing fuse. */
 const FUSE_CELL = { row: 18, col: 23 };
+/** Boiler room: the second cell for the generator panel. */
+const SPARE_FUSE_CELL = { row: 46, col: 8 };
 /** Boiler room, deep basement: pries the boarded door open. */
 const CROWBAR_CELL = { row: 47, col: 3 };
 /** Spare torch cells, scattered where a torch would have been left. */
@@ -424,6 +598,10 @@ const CORPSE_ROOMS: Array<{ room: string; count: number }> = [
 
 export interface MapInfo {
   grid: number[][];
+  /** Touchable props: taps, switches, cabinets, valves, freezers, the van. */
+  interactables: Interactable[];
+  /** Doors chained shut: a padlock for the acid, a chain for the cutters. */
+  chainedDoors: DoorChain[];
   /**
    * The raw ASCII plan, unmodified. The collision grid only distinguishes
    * "wall" from "walkable", so the minimap reads this to tell a corridor from
@@ -486,6 +664,12 @@ export interface MapInfo {
   desks: DrawerFixture[];
   /** Steel wardrobes the player can climb into and hide. */
   lockers: LockerFixture[];
+  /**
+   * Where Dr Aris is put down when the player steps out onto each deck, one
+   * entry per deck. Sealed floors mean the creature cannot follow on foot, so
+   * the game brings it through after the player instead.
+   */
+  deckPatrolSpawns: THREE.Vector3[];
 }
 
 /** One wall scrawl: the texture to repaint and the text it should carry. */
@@ -580,33 +764,27 @@ function parseLayout(): ParsedPlan {
   return { grid, roomIndexByCell, rooms, indexByChar };
 }
 
-/**
- * The plan is hand-authored, so every interesting cell must be provably
- * reachable from the spawn. A sealed-off room - or an unreachable exit - would
- * otherwise be a silent, unwinnable bug.
- */
-function assertReachable(grid: number[][], required: Array<[number, number, string]>): void {
-  if (!isOpen(grid, PLAYER_SPAWN.row, PLAYER_SPAWN.col)) {
-    throw new Error(`Player spawn (${PLAYER_SPAWN.row},${PLAYER_SPAWN.col}) is inside a wall`);
-  }
-
+/** Every cell a walker can reach from one doorway, as a flat bitmask. */
+function floodFrom(grid: number[][], row: number, col: number): Uint8Array {
   const seen = new Uint8Array(ROWS * COLS);
-  const queue: number[] = [PLAYER_SPAWN.row * COLS + PLAYER_SPAWN.col];
+  if (!isOpen(grid, row, col)) return seen;
+
+  const queue: number[] = [row * COLS + col];
   seen[queue[0]] = 1;
 
   let head = 0;
   while (head < queue.length) {
     const current = queue[head++];
-    const row = Math.floor(current / COLS);
-    const col = current % COLS;
+    const atRow = Math.floor(current / COLS);
+    const atCol = current % COLS;
     for (const [dr, dc] of [
       [1, 0],
       [-1, 0],
       [0, 1],
       [0, -1],
     ]) {
-      const nr = row + dr;
-      const nc = col + dc;
+      const nr = atRow + dr;
+      const nc = atCol + dc;
       if (!isOpen(grid, nr, nc)) continue;
       const next = nr * COLS + nc;
       if (seen[next]) continue;
@@ -615,9 +793,37 @@ function assertReachable(grid: number[][], required: Array<[number, number, stri
     }
   }
 
+  return seen;
+}
+
+/**
+ * The plan is hand-authored, so every interesting cell must be provably
+ * reachable with the doors that are actually in place. A sealed-off room - or
+ * an unreachable exit - would otherwise be a silent, unwinnable bug.
+ *
+ * Reachability used to mean "from the spawn", which stopped being the same
+ * thing the moment the floors were sealed: the crowbar is in the basement and
+ * the keys are in the lobby, and the only thing joining them is the cage. So
+ * every landing is walked in turn, and the union of what they reach is what
+ * the placements are checked against.
+ */
+function assertReachable(grid: number[][], required: Array<[number, number, string]>): void {
+  if (!isOpen(grid, PLAYER_SPAWN.row, PLAYER_SPAWN.col)) {
+    throw new Error(`Player spawn (${PLAYER_SPAWN.row},${PLAYER_SPAWN.col}) is inside a wall`);
+  }
+
+  const reachable = new Uint8Array(ROWS * COLS);
+  for (const deck of ELEVATOR_DECKS) {
+    if (!isOpen(grid, deck.cageRow, ELEVATOR_COL)) {
+      throw new Error(`Lift landing ${deck.id} is walled in at (${deck.cageRow},${ELEVATOR_COL})`);
+    }
+    const seen = floodFrom(grid, deck.cageRow, ELEVATOR_COL);
+    for (let i = 0; i < seen.length; i++) if (seen[i]) reachable[i] = 1;
+  }
+
   for (const [row, col, label] of required) {
-    if (!seen[row * COLS + col]) {
-      throw new Error(`${label} at (${row},${col}) cannot be reached from the spawn point`);
+    if (!reachable[row * COLS + col]) {
+      throw new Error(`${label} at (${row},${col}) cannot be reached from any lift landing`);
     }
   }
 }
@@ -634,6 +840,79 @@ function placeCell(grid: number[][], row: number, col: number, value: number, la
 function isOpen(grid: number[][], row: number, col: number): boolean {
   if (row < 0 || row >= ROWS || col < 0 || col >= COLS) return false;
   return grid[row][col] !== 0;
+}
+
+/**
+ * The invariant everything else rests on: nobody walks from one floor to
+ * another. Checked by flooding each landing and watching which bands the water
+ * spills into, because one stray doorway is exactly how the building turned
+ * back into a single long hallway before.
+ *
+ * The grounds are exempt, and only they: the reception door lets out into the
+ * courtyard, and the run ends at the gate up the yard.
+ */
+function assertFloorsSealed(grid: number[][]): void {
+  for (let index = 0; index < ELEVATOR_DECKS.length; index++) {
+    const deck = ELEVATOR_DECKS[index];
+    if (deck.id === 'roof') continue;
+
+    const seen = floodFrom(grid, deck.cageRow, ELEVATOR_COL);
+    for (let row = 0; row < ROWS; row++) {
+      const other = floorAt(row);
+      if (other === index || other === 4) continue;
+      for (let col = 0; col < COLS; col++) {
+        if (!seen[row * COLS + col]) continue;
+        const name = ELEVATOR_DECKS[other]?.id ?? String(other);
+        throw new Error(`Floor ${deck.id} is still joined to ${name} at (${row},${col})`);
+      }
+    }
+  }
+}
+
+/**
+ * Where the creature waits on each floor: the last cell its own floor's flood
+ * reaches from the lift, i.e. the furthest walk from the doors.
+ *
+ * Far on purpose. Sealed floors mean Dr Aris cannot follow the player on foot
+ * any more, so the game brings him over after the lift ride - and stepping out
+ * of the cage should never open straight onto a face.
+ */
+function deckPatrolSpawn(grid: number[][], deckIndex: number): THREE.Vector3 {
+  const deck = ELEVATOR_DECKS[deckIndex];
+  const { first, last } = deckRows(deckIndex);
+  const startRow = Math.min(Math.max(deck.cageRow, first), last);
+  const start = startRow * COLS + ELEVATOR_COL;
+
+  const seen = new Uint8Array(ROWS * COLS);
+  seen[start] = 1;
+  const queue: number[] = [start];
+  let furthest = start;
+
+  for (let head = 0; head < queue.length; head++) {
+    const current = queue[head];
+    furthest = current;
+    const row = Math.floor(current / COLS);
+    const col = current % COLS;
+    for (const [dr, dc] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
+      const nr = row + dr;
+      const nc = col + dc;
+      // Confined to the deck's own rows: the yard, the courtyard and the
+      // floors below are all reachable from some landings and not from others.
+      if (nr < first || nr > last) continue;
+      if (!isOpen(grid, nr, nc)) continue;
+      const next = nr * COLS + nc;
+      if (seen[next]) continue;
+      seen[next] = 1;
+      queue.push(next);
+    }
+  }
+
+  return cellToWorld(Math.floor(furthest / COLS), furthest % COLS);
 }
 
 /**
@@ -706,6 +985,12 @@ export function buildWorld(scene: THREE.Scene): MapInfo {
   // plain union of the two keeps the shape obvious at the call site.
   const map = base as MapInfo;
   Object.assign(map, fixtures);
+
+  // One landing place per floor for the creature, worked out from the grid
+  // once: the furthest cell of its own floor from the lift doors. Far on
+  // purpose - stepping out of the cage should never open onto a face.
+  map.deckPatrolSpawns = ELEVATOR_DECKS.map((_, index) => deckPatrolSpawn(map.grid, index));
+
   return map;
 }
 
@@ -722,6 +1007,30 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   const CELL_CARD = 7;
   const CELL_SUBSTATION = 8;
   const CELL_ELEVATOR = 9;
+
+  // --- Cut the elevator shaft openings ------------------------------------
+  // Every deck recesses the cage into one wall cell directly above its
+  // corridor, so the doorway into the lift lands in the same place on every
+  // floor. Opening the cell here, before the walls are built, leaves a niche
+  // with three walls and an open front where the gate is.
+  // NOTE: cage rows are walls (#) in the plan, so we write directly into the
+  // grid rather than going through placeCell, which rejects wall cells.
+  for (const deck of ELEVATOR_DECKS) {
+    const r = deck.cageRow;
+    const c = ELEVATOR_COL;
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) {
+      throw new Error(`Elevator shaft ${deck.id} at (${r},${c}) is outside the plan`);
+    }
+    grid[r][c] = CELL_ELEVATOR;
+  }
+  assertReachable(
+    grid,
+    ELEVATOR_DECKS.map((deck): [number, number, string] => [
+      deck.cageRow,
+      ELEVATOR_COL,
+      `Elevator shaft ${deck.id}`,
+    ]),
+  );
 
   assertReachable(grid, [
     [MONSTER_SPAWN.row, MONSTER_SPAWN.col, 'Monster spawn'],
@@ -765,29 +1074,9 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   // unwinnable. Failing loudly here beats shipping a dead end.
   assertReachable(grid, [[CROWBAR_CELL.row, CROWBAR_CELL.col, 'Crowbar (door boarded up)']]);
 
-  // --- Cut the elevator shaft openings ------------------------------------
-  // Every deck recesses the cage into one wall cell directly above its
-  // corridor, so the doorway into the lift lands in the same place on every
-  // floor. Opening the cell here, before the walls are built, leaves a niche
-  // with three walls and an open front where the gate is.
-  // NOTE: cage rows are walls (#) in the plan, so we write directly into the
-  // grid rather than going through placeCell, which rejects wall cells.
-  for (const deck of ELEVATOR_DECKS) {
-    const r = deck.cageRow;
-    const c = ELEVATOR_COL;
-    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) {
-      throw new Error(`Elevator shaft ${deck.id} at (${r},${c}) is outside the plan`);
-    }
-    grid[r][c] = CELL_ELEVATOR;
-  }
-  assertReachable(
-    grid,
-    ELEVATOR_DECKS.map((deck): [number, number, string] => [
-      deck.cageRow,
-      ELEVATOR_COL,
-      `Elevator shaft ${deck.id}`,
-    ]),
-  );
+  // The niches are cut, so this is the first moment the sealing can be asked
+  // whether it actually sealed anything.
+  assertFloorsSealed(grid);
 
   // --- Materials ---------------------------------------------------------
   const wallTexture = createWallTexture();
@@ -1125,6 +1414,8 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   const doors: DoorFixture[] = [];
   const desks: DrawerFixture[] = [];
   const lockers: LockerFixture[] = [];
+  const interactables: Interactable[] = [];
+  const chainedDoors: DoorChain[] = [];
 
   // Doors get their own material rather than sharing the merged prop bucket:
   // they move, so they can never be baked into the static draw call.
@@ -1151,7 +1442,15 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
     { iron: metalMat, darkIron: darkMetalMat, brass: brassMat, rust: rustMat },
     CELL,
   );
-  pendingFixtures = { elevator, elevatorCol: ELEVATOR_COL, doors, desks, lockers };
+  pendingFixtures = {
+    elevator,
+    elevatorCol: ELEVATOR_COL,
+    doors,
+    desks,
+    lockers,
+    interactables,
+    chainedDoors,
+  };
 
   // The cage is solid: the player walks in through the gate and nowhere else.
   // Three circles stand in for its back and corners, since the decorative
@@ -1258,6 +1557,64 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
       centre: new THREE.Vector3(x, 1.1, z),
     });
     colliders.push({ x, z, r: 0.6 });
+  }
+
+  // --- Interactive props -------------------------------------------------
+  // Built here, after the grid is final and after every doorway has been
+  // hung, because a prop needs both: the grid to find a cell it can stand in,
+  // and the door list to know which cells are passages.
+  const propMats = makeInteractableMaterials();
+  const propCells = new Set<string>();
+  for (const spec of PROP_PLAN) {
+    const cell = nearestPropCell(grid, spec.anchor, propCells);
+    if (!cell) continue;
+    propCells.add(`${cell.row}:${cell.col}`);
+
+    const prop = createInteractable(spec.kind, propMats);
+    const x = cell.col * CELL;
+    const z = cell.row * CELL;
+    placeInteractable(prop, x, z, spec.yaw ?? 0, floorAt(cell.row), spec.loot ?? null, spec.locked ?? false);
+    if (WALL_KINDS.has(spec.kind)) mountOnWall(prop, cell, grid, CELL);
+    scene.add(prop.group);
+    interactables.push(prop);
+    colliders.push({ x, z, r: interactableRadius(prop) });
+  }
+
+  // A twelve-volt battery out in the courtyard: the ambulance's missing cell.
+  const shedCell = nearestPropCell(grid, { row: 9, col: 20 }, propCells);
+  if (shedCell) {
+    propCells.add(`${shedCell.row}:${shedCell.col}`);
+    const cellBattery = createBatteryMesh(batteryMat, metalMat);
+    cellBattery.userData.itemId = 'battery';
+    cellBattery.userData.pickupTag = 'shedBattery';
+    cellBattery.position.set(shedCell.col * CELL, 0.35, shedCell.row * CELL);
+    scene.add(cellBattery);
+  }
+
+  // --- Chained doorways ---------------------------------------------------
+  // A padlock on a basement door for the acid, a heavy chain into the
+  // director's wing for the cutters. Both are picked from doorways that were
+  // hung seconds ago, and only from one that can be sealed without cutting
+  // anything else off - the check in `pickChainableDoorway` is the whole
+  // reason this is derived rather than typed in.
+  for (const spec of [
+    { lock: 'padlock' as const, band: 0 },
+    { lock: 'chain' as const, band: 3 },
+  ]) {
+    const door = pickChainableDoorway(grid, doors, spec.band, chainedDoors);
+    if (!door) continue;
+    const mesh = createDoorChain(metalMat, rustMat, door.vertical, spec.lock);
+    mesh.position.set(door.col * CELL, 0, door.row * CELL);
+    scene.add(mesh);
+    chainedDoors.push({
+      row: door.row,
+      col: door.col,
+      door,
+      lock: spec.lock,
+      mesh,
+      centre: new THREE.Vector3(door.col * CELL, 1.2, door.row * CELL),
+      beaten: false,
+    });
   }
 
   // --- Indoor clutter, gore and fluorescent tubes ------------------------
@@ -1576,6 +1933,7 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   };
 
   spawnItem('fuse', FUSE_CELL, createFuseMesh(fuseMat, glassMat, metalMat));
+  spawnItem('fuse', SPARE_FUSE_CELL, createFuseMesh(fuseMat, glassMat, metalMat));
   spawnItem('crowbar', CROWBAR_CELL, createCrowbarMesh(crowbarMat), 0.9);
   for (const cell of BATTERY_CELLS) {
     spawnItem('battery', cell, createBatteryMesh(batteryMat, metalMat), 0.9);
@@ -2632,4 +2990,152 @@ function addWallBracket(
   group.add(bracket);
 }
 
-export { CELL, WALL_H, EYE_HEIGHT, STAIR_CELLS };
+export { CELL, WALL_H, EYE_HEIGHT };
+
+/* -------------------------------------------------------------------------
+ * Interactive prop placement
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The nearest cell a prop can legally stand in, searching outward from an
+ * anchor.
+ *
+ * Placements are written as "the cell near this desk", on purpose: only the
+ * level's landmarks are hand-checked, and a prop that landed in a wall would
+ * either hang in mid air or plug a corridor. Doorways, the elevator mouths and
+ * any cell another prop already claimed are refused, so the plan above can be
+ * edited without anyone having to re-check it by hand.
+ */
+function nearestPropCell(
+  grid: number[][],
+  anchor: { row: number; col: number },
+  taken: Set<string>,
+): { row: number; col: number } | null {
+  for (let radius = 0; radius <= 6; radius++) {
+    for (let dr = -radius; dr <= radius; dr++) {
+      for (let dc = -radius; dc <= radius; dc++) {
+        if (Math.max(Math.abs(dr), Math.abs(dc)) !== radius) continue;
+        const row = anchor.row + dr;
+        const col = anchor.col + dc;
+        if (row < 0 || row >= ROWS || col < 0 || col >= COLS) continue;
+        if (!isOpen(grid, row, col)) continue;
+        if (LAYOUT[row][col] === '+') continue;
+        if (taken.has(`${row}:${col}`)) continue;
+        // Never in the mouth of a lift cage, which is the one cell per floor
+        // the player has to walk through.
+        let inCage = false;
+        for (const deck of ELEVATOR_DECKS) {
+          if (Math.abs(row - deck.cageRow) <= 1 && Math.abs(col - ELEVATOR_COL) <= 1) inCage = true;
+        }
+        if (inCage) continue;
+        return { row, col };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Turns a wall-mounted prop to face out of the nearest wall and slides it
+ * against that wall, so a light switch sits on plaster rather than hovering in
+ * the middle of a corridor.
+ */
+function mountOnWall(
+  prop: Interactable,
+  cell: { row: number; col: number },
+  grid: number[][],
+  cellSize: number,
+): void {
+  const sides: Array<[number, number]> = [
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1],
+  ];
+  for (const [dr, dc] of sides) {
+    if (isOpen(grid, cell.row + dr, cell.col + dc)) continue;
+    // A wall on this side: stand in front of it, facing away from it.
+    const x = cell.col * cellSize + dc * -(cellSize / 2 - 0.16);
+    const z = cell.row * cellSize + dr * -(cellSize / 2 - 0.16);
+    prop.group.position.set(x, 0, z);
+    // Local +z is the face, so the yaw is whatever turns it off the wall.
+    prop.group.rotation.y = Math.atan2(-dc, -dr);
+    prop.centre.set(x, prop.centre.y, z);
+    return;
+  }
+}
+
+/**
+ * Picks a doorway in a floor band that can be chained without sealing
+ * anything else off.
+ *
+ * A chained door is shut until the player beats the lock, so chaining the
+ * wrong one would strand a key, the fuse or the crowbar behind it and make the
+ * run unwinnable. Each candidate is trialled as if it were a wall, and only
+ * one that still leaves every critical pickup walkable from the spawn is
+ * accepted.
+ */
+function pickChainableDoorway(
+  grid: number[][],
+  doors: DoorFixture[],
+  band: number,
+  taken: DoorChain[],
+): DoorFixture | null {
+  const anchors: Array<{ row: number; col: number }> = [
+    CROWBAR_CELL,
+    FUSE_CELL,
+    SPARE_FUSE_CELL,
+    BREAKER_CELL,
+    CARD_CELL,
+    SUBSTATION_CELL,
+    PLAYER_SPAWN,
+    MONSTER_SPAWN,
+    ...KEY_CELLS,
+  ];
+  for (const deck of ELEVATOR_DECKS) anchors.push({ row: deck.cageRow, col: ELEVATOR_COL });
+
+  for (const door of doors) {
+    if (floorAt(door.row) !== band) continue;
+    if (taken.some((chain) => chain.row === door.row && chain.col === door.col)) continue;
+    if (doors.some((other) => other !== door && other.row === door.row && other.col === door.col)) {
+      continue;
+    }
+    const blocked = `${door.row}:${door.col}`;
+    const seen = floodCells(grid, PLAYER_SPAWN.row, PLAYER_SPAWN.col, blocked);
+    const reachable = anchors.every((cell) => seen.has(cell.row * COLS + cell.col));
+    if (reachable) return door;
+  }
+  return null;
+}
+
+/** Every cell walkable from a start, with one cell taken out of the map. */
+function floodCells(
+  grid: number[][],
+  startRow: number,
+  startCol: number,
+  blockedKey: string,
+): Set<number> {
+  const seen = new Set<number>();
+  const queue: Array<[number, number]> = [[startRow, startCol]];
+  seen.add(startRow * COLS + startCol);
+  while (queue.length > 0) {
+    const [row, col] = queue.pop() as [number, number];
+    for (const [dr, dc] of [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ] as Array<[number, number]>) {
+      const r = row + dr;
+      const c = col + dc;
+      if (r < 0 || r >= ROWS || c < 0 || c >= COLS) continue;
+      if (`${r}:${c}` === blockedKey) continue;
+      if (!isOpen(grid, r, c)) continue;
+      const key = r * COLS + c;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      queue.push([r, c]);
+    }
+  }
+  return seen;
+}

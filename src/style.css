@@ -433,6 +433,49 @@ body {
   pointer-events: none;
 }
 
+/*
+ * Two soft scrims: one under the status bar, one under the touch buttons.
+ * Without them the brass HUD plates had to fight bright walls and lit floors
+ * for contrast, which is what made the readouts look washed out and cramped.
+ */
+#game-hud::before,
+#game-hud::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* -1 keeps both scrims under every positioned HUD child (the ::after one
+     would otherwise paint last and veil the crosshair and the messages).
+     They still sit inside #game-hud's own stacking context, so they stay
+     above the canvas. */
+  z-index: -1;
+  pointer-events: none;
+}
+
+#game-hud::before {
+  top: 0;
+  height: 108px;
+  background: linear-gradient(
+    to bottom,
+    rgba(2, 3, 6, 0.72) 0%,
+    rgba(2, 3, 6, 0.4) 55%,
+    rgba(2, 3, 6, 0) 100%
+  );
+}
+
+#game-hud::after {
+  bottom: 0;
+  height: 128px;
+  background: linear-gradient(
+    to top,
+    rgba(2, 3, 6, 0.6) 0%,
+    rgba(2, 3, 6, 0.28) 55%,
+    rgba(2, 3, 6, 0) 100%
+  );
+}
+
+
+
 #danger-vignette {
   position: absolute;
   inset: 0;
@@ -446,11 +489,16 @@ body {
   );
 }
 
+/*
+ * Three tracks: vitals, objective, keys. A grid (rather than a flex row with
+ * `space-between`) is what keeps the centre column from spilling over the
+ * side plates when a long objective string is on screen.
+ */
 .hud-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px 14px;
   /* A notch and the browser's toolbar both eat into the top strip on a phone,
      so the HUD starts below them instead of under them. */
   padding: calc(10px + env(safe-area-inset-top, 0px)) 18px 10px;
@@ -828,11 +876,17 @@ body.in-locker #fixture-prompt .fixture-key {
 .hud-right {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 13px;
+  padding: 5px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgba(11, 12, 16, 0.76), rgba(4, 5, 8, 0.66));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 8px 22px rgba(0, 0, 0, 0.5);
 }
 
+/* Keys first, pause button on the outer corner where a thumb can reach it. */
 .hud-right {
-  flex-direction: row-reverse;
+  flex-direction: row;
 }
 
 .hud-keys {
@@ -853,39 +907,48 @@ body.in-locker #fixture-prompt .fixture-key {
   animation: keyPulse 0.9s ease-out;
 }
 
+/* Sits inside the vitals plate, so it only needs a divider, not a second frame. */
 .hud-notes {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
   letter-spacing: 1px;
-  color: #978f82;
-  padding: 3px 9px;
-  border: 1px solid var(--hairline);
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.4);
+  color: #b3aa9a;
+  padding: 2px 0 2px 12px;
+  border-left: 1px solid var(--hairline);
 }
 
 .hud-notes-icon {
   font-size: 14px;
 }
 
+/*
+ * Stacked, not a row: the objective used to sit beside the location chip, and
+ * the pair together were wider than the middle track - which pushed the
+ * location off the right edge of a landscape phone.
+ */
 .hud-center {
-  flex: 1;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
 }
 
 .hud-objective {
-  font-size: 12px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: #b3aa9a;
+  max-width: 100%;
   padding: 5px 16px;
   border: 1px solid var(--hairline);
   border-radius: 2px;
-  background: rgba(0, 0, 0, 0.45);
-  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  line-height: 1.38;
+  letter-spacing: 1.6px;
+  text-align: center;
+  text-transform: uppercase;
+  text-wrap: balance;
+  color: #b3aa9a;
 }
 
 .hud-meter {
@@ -901,15 +964,20 @@ body.in-locker #fixture-prompt .fixture-key {
 
 .meter {
   width: 74px;
-  height: 8px;
+  height: 9px;
   border: 1px solid var(--hairline);
-  background: rgba(0, 0, 0, 0.6);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.66);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.85);
   overflow: hidden;
 }
 
 .meter-fill {
   height: 100%;
   width: 100%;
+  /* A hairline of light along the top edge so the bar reads as a gauge and
+     not as a flat colour swatch. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
   transition: width 0.25s linear, background 0.3s ease;
 }
 
@@ -1222,27 +1290,34 @@ body.in-locker #fixture-prompt .fixture-key {
   width: 62px;
   height: 62px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: radial-gradient(circle at 50% 32%, rgba(46, 42, 34, 0.82), rgba(8, 8, 10, 0.72));
+  border: 1px solid rgba(184, 145, 46, 0.34);
+  box-shadow: inset 0 1px 0 rgba(230, 207, 148, 0.14), 0 8px 20px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   font-size: 24px;
+  line-height: 1;
   color: #fff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease,
+    transform 0.1s ease;
 }
 
 .mobile-btn:active,
 .mobile-btn.active {
-  background: rgba(200, 20, 20, 0.32);
-  border-color: rgba(255, 60, 60, 0.6);
+  background: radial-gradient(circle at 50% 32%, rgba(120, 20, 20, 0.9), rgba(42, 4, 4, 0.8));
+  border-color: rgba(255, 80, 60, 0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 160, 140, 0.2), 0 0 18px rgba(200, 30, 20, 0.45);
   transform: scale(0.95);
 }
 
 .mobile-btn.active.crouch-active {
-  background: rgba(60, 180, 80, 0.35);
+  background: radial-gradient(circle at 50% 32%, rgba(22, 110, 50, 0.9), rgba(4, 34, 16, 0.8));
   border-color: rgba(80, 255, 110, 0.6);
+  box-shadow: inset 0 1px 0 rgba(160, 255, 180, 0.2), 0 0 18px rgba(50, 200, 90, 0.4);
 }
 
 /* ===== CROUCH HIDDEN INDICATOR ===== */
@@ -1603,7 +1678,24 @@ body.touch-device .interact-key { display: none; }
   }
 
   .hud-top {
-    padding: 8px 12px;
+    gap: 6px 10px;
+    padding: calc(6px + env(safe-area-inset-top, 0px)) 12px 8px;
+  }
+
+  .hud-left,
+  .hud-right {
+    gap: 10px;
+    padding: 4px 8px;
+  }
+
+  .hud-notes {
+    padding-left: 10px;
+  }
+
+  .hud-objective {
+    font-size: 11px;
+    padding: 4px 11px;
+    letter-spacing: 1.1px;
   }
 
   .hud-message {
@@ -1611,8 +1703,10 @@ body.touch-device .interact-key { display: none; }
     font-size: 14px;
   }
 
+  /* Clear of both the status bar and the raised lift panel, which share the
+     top strip while the player is inside the cage. */
   .room-banner {
-    top: 16%;
+    top: 33%;
   }
 
   .room-banner h3 {
@@ -1865,17 +1959,29 @@ body.in-cutscene #minimap-panel {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 6px;
+  max-width: 100%;
   padding: 3px 12px;
-  border: 1px solid rgba(184, 145, 46, 0.3);
+  border: 1px solid rgba(184, 145, 46, 0.34);
   border-radius: 2px;
-  background: rgba(8, 7, 4, 0.55);
+  background: linear-gradient(180deg, rgba(26, 21, 11, 0.8), rgba(8, 7, 4, 0.72));
+  box-shadow: inset 0 1px 0 rgba(230, 207, 148, 0.09);
   font-size: 10px;
   letter-spacing: 2px;
   text-transform: uppercase;
   color: #e6cf94;
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* A brass bead so the chip reads as "you are here" at a glance. */
+.lift-location::before {
+  content: '';
+  flex: none;
+  width: 5px;
+  height: 5px;
+  transform: rotate(45deg);
+  background: var(--amber);
+  box-shadow: 0 0 8px rgba(255, 171, 46, 0.8);
 }
 
 .lift-location-label {
@@ -1886,6 +1992,17 @@ body.in-cutscene #minimap-panel {
 #lift-location-text {
   color: var(--amber);
   text-shadow: 0 0 10px rgba(255, 171, 46, 0.35);
+}
+
+/* Short landscape phones: the chip is the last thing that should ever push the
+   objective off the middle track, so it tightens up before anything else. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .lift-location {
+    gap: 6px;
+    padding: 2px 9px;
+    font-size: 9px;
+    letter-spacing: 1.4px;
+  }
 }
 
 /*

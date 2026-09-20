@@ -79,8 +79,96 @@ export interface LockerFixture {
   centre: THREE.Vector3;
 }
 
+/**
+ * A door that has been locked from the outside.
+ *
+ * The leaf is an ordinary ward door - what makes it special is the lock across
+ * it, which is why the chain is a separate mesh rather than another kind of
+ * door. Cut the lock and the leaf behaves exactly like every other one.
+ */
+export interface DoorChain {
+  row: number;
+  col: number;
+  /** The leaf the chain is holding shut. */
+  door: DoorFixture;
+  /** `padlock` gives way to acid, `chain` to the bolt cutters. */
+  lock: 'padlock' | 'chain';
+  /** The lock itself, hidden the moment it is beaten. */
+  mesh: THREE.Object3D;
+  centre: THREE.Vector3;
+  /** True once the acid or the cutters have dealt with it. */
+  beaten: boolean;
+}
+
 /** Total travel of a drawer, in metres. */
 export const DRAWER_TRAVEL = 0.4;
+
+/* ---------------------------------------------------------------- chains */
+
+/**
+ * A chain run, a hasp and a lock, laid across the doorway of a shut leaf.
+ *
+ * Drawn in the door's own opening plane so it reads as holding the leaf shut:
+ * the plate is bolted to the frame and the padlock hangs off it.
+ */
+export function createDoorChain(
+  metal: THREE.Material,
+  rust: THREE.Material,
+  vertical: boolean,
+  lock: 'padlock' | 'chain',
+): THREE.Object3D {
+  const group = new THREE.Group();
+  const width = 1.5;
+
+  // The hasp plate, bolted across the opening above the handle.
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(width, 0.16, 0.06), rust);
+  plate.position.set(0, 1.24, 0.06);
+  group.add(plate);
+
+  for (const sign of [-1, 1]) {
+    const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.05, 7), metal);
+    bolt.rotation.x = Math.PI / 2;
+    bolt.position.set(sign * (width / 2 - 0.12), 1.24, 0.1);
+    group.add(bolt);
+  }
+
+  if (lock === 'chain') {
+    // A heavy chain: links running across the whole opening.
+    const linkGeo = new THREE.TorusGeometry(0.055, 0.016, 6, 10);
+    for (let i = 0; i < 14; i++) {
+      const link = new THREE.Mesh(linkGeo, rust);
+      link.position.set(-width / 2 + 0.08 + i * 0.105, 1.24 + Math.sin(i * 0.9) * 0.03, 0.1);
+      link.rotation.y = i % 2 === 0 ? 0 : Math.PI / 2;
+      link.rotation.x = Math.PI / 2;
+      group.add(link);
+    }
+    const lockBody = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.08), metal);
+    lockBody.position.set(0.1, 1.44, 0.14);
+    group.add(lockBody);
+    const shackle = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.018, 6, 10, Math.PI), metal);
+    shackle.position.set(0.1, 1.56, 0.14);
+    group.add(shackle);
+  } else {
+    // A padlock on a short run of chain and a rusty hasp ring.
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.02, 6, 12), rust);
+    ring.position.set(0.32, 1.14, 0.07);
+    group.add(ring);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.24, 0.09), rust);
+    body.position.set(0.32, 1.0, 0.1);
+    group.add(body);
+    const shackle = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.02, 6, 10, Math.PI), rust);
+    shackle.position.set(0.32, 1.12, 0.1);
+    group.add(shackle);
+    const keyway = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.03, 8), metal);
+    keyway.rotation.x = Math.PI / 2;
+    keyway.position.set(0.32, 1.0, 0.15);
+    group.add(keyway);
+  }
+
+  // An east-west passage holds the chain up the other way.
+  if (!vertical) group.rotation.y = Math.PI / 2;
+  return group;
+}
 
 /* ------------------------------------------------------------------ doors */
 

@@ -44,7 +44,7 @@ const LEVELS: LevelBand[] = [
   },
   {
     name: { uz: '2-QAVAT', en: 'FLOOR 2', ru: '2 ЭТАЖ' },
-    sub: { uz: 'palatalar', en: 'patient wards', ru: 'палаты' },
+    sub: { uz: 'operatsiya va 404', en: 'theatre and room 404', ru: 'операционная и 404' },
     row1: 34,
     row2: 43,
   },

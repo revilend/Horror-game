@@ -29,7 +29,7 @@ export class HorrorEffects {
   private ambientFloor = 0;
   private flickerLights: THREE.PointLight[] = [];
   private fluorescents: THREE.MeshStandardMaterial[] = [];
-  private fogDensity = 0.08;
+  private fogDensity = 0.035;
   private danger = 0;
   /** 0 = hospital is dead, 1 = emergency power restored */
   private powerOn = false;
@@ -125,6 +125,40 @@ export class HorrorEffects {
   }
 
   /**
+   * Cuts or restores the wall lights around a point: what the switch on the
+   * wall actually does.
+   *
+   * Every flicker light re-derives its intensity from `userData.baseIntensity`
+   * each frame, so zeroing that field is what takes a room dark and putting it
+   * back is what relights it. The counter is there because two switches can
+   * cover the same corridor: the last one to be flipped off is the one that
+   * has to be flipped back on before the tube comes up again.
+   */
+  setLightsAround(x: number, z: number, radius: number, on: boolean): void {
+    const radiusSq = radius * radius;
+    for (const light of this.flickerLights) {
+      const dx = light.position.x - x;
+      const dz = light.position.z - z;
+      if (dx * dx + dz * dz > radiusSq) continue;
+
+      const cuts = (light.userData.switchCuts as number) || 0;
+      if (on) {
+        if (cuts === 0) continue;
+        const left = cuts - 1;
+        light.userData.switchCuts = left;
+        if (left === 0) {
+          light.userData.baseIntensity = (light.userData.savedBase as number) ?? 0.7;
+        }
+      } else {
+        if (cuts === 0) light.userData.savedBase = light.userData.baseIntensity;
+        light.userData.switchCuts = cuts + 1;
+        light.userData.baseIntensity = 0;
+        light.intensity = 0;
+      }
+    }
+  }
+
+  /**
    * Create a decorative light.
    * Shadow casting is opt-in: point-light shadows render a full cubemap per
    * light, so leaving it on for every decorative light destroys mobile frame
@@ -162,7 +196,7 @@ export class HorrorEffects {
 
     // A wide penumbra plus a low decay gives the beam a soft, dusty edge that
     // falls away gradually instead of ending in a hard circle.
-    const flashlight = new THREE.SpotLight(0xfff4e0, 5.5, 44, Math.PI / 3.2, 0.55, 0.85);
+    const flashlight = new THREE.SpotLight(0xfff4e0, 7.0, 50, Math.PI / 2.8, 0.45, 0.75);
     flashlight.castShadow = true;
     flashlight.shadow.mapSize.width = 512;
     flashlight.shadow.mapSize.height = 512;
@@ -175,7 +209,7 @@ export class HorrorEffects {
 
     // brighter fill: keeps floors and walls readable right around the
     // player even when the flashlight is off or on its last bar of battery.
-    const fill = new THREE.PointLight(0xc8d8ee, 1.15, 11, 1.8);
+    const fill = new THREE.PointLight(0xc8d8ee, 2.2, 18, 1.2);
     camera.add(fill);
 
     this.flashlight = flashlight;
@@ -334,7 +368,7 @@ export class HorrorEffects {
 
     // --- Fog: darkness, tension and danger all thicken it -----------------
     // Outside, the fog thins out and turns a wet blue-grey so the yard reads.
-    const indoorFog = 0.024 - this.powerLevel * 0.01 + tension * 0.008 + this.danger * 0.018;
+    const indoorFog = 0.018 - this.powerLevel * 0.006 + tension * 0.005 + this.danger * 0.012;
     const outdoorFog = 0.018 + this.danger * 0.015;
     const targetFog = indoorFog + (outdoorFog - indoorFog) * this.outdoorLevel;
     this.fogDensity += (targetFog - this.fogDensity) * dt * 0.7;
@@ -555,14 +589,14 @@ export class HorrorEffects {
       const x = (Math.random() - 0.5) * RAIN_RADIUS * 2;
       const y = Math.random() * RAIN_HEIGHT;
       const z = (Math.random() - 0.5) * RAIN_RADIUS * 2;
-      const length = 0.5 + Math.random() * 0.9;
+      const length = 1.0 + Math.random() * 1.5;
       positions[i * 6] = x;
       positions[i * 6 + 1] = y;
       positions[i * 6 + 2] = z;
       positions[i * 6 + 3] = x + 0.05;
       positions[i * 6 + 4] = y - length;
       positions[i * 6 + 5] = z;
-      this.rainSpeeds[i] = 15 + Math.random() * 12;
+      this.rainSpeeds[i] = 8 + Math.random() * 6;
       this.rainLengths[i] = length;
     }
 
@@ -572,7 +606,7 @@ export class HorrorEffects {
     const material = new THREE.LineBasicMaterial({
       color: 0xa8bcd4,
       transparent: true,
-      opacity: 0.3,
+      opacity: 0.55,
       depthWrite: false,
       fog: false,
     });
@@ -593,7 +627,7 @@ export class HorrorEffects {
 
     this.rain.visible = true;
     const material = this.rain.material as THREE.LineBasicMaterial;
-    material.opacity = 0.3 * this.rainLevel;
+    material.opacity = 0.55 * this.rainLevel;
 
     const attribute = this.rain.geometry.getAttribute('position') as THREE.BufferAttribute;
     const array = attribute.array as Float32Array;
@@ -662,7 +696,7 @@ export class HorrorEffects {
   reset(): void {
     this.eventTimer = 0;
     this.nextEventTime = 18;
-    this.fogDensity = 0.08;
+    this.fogDensity = 0.035;
     this.danger = 0;
     this.powerOn = false;
     this.powerLevel = 0;
@@ -684,8 +718,8 @@ export class HorrorEffects {
     }
     this.flickerLights = [];
     this.fluorescents = [];
-    this.ambientLight.intensity = 0.6;
-    this.ambientLight.color.set(0x2a3a50);
+    this.ambientLight.intensity = 1.0;
+    this.ambientLight.color.set(0x3d4a5c);
 
     if (this.rain) {
       this.rain.visible = false;
