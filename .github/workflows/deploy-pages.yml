@@ -9,6 +9,11 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main, master]
+  # Also on pull requests, so a change is built and checked before it lands
+  # rather than after. Only the build job runs for a PR; the deploy job below
+  # is gated on the event so a pull request can never publish the site.
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -51,6 +56,8 @@ jobs:
           path: dist
 
   deploy:
+    # A pull request builds and checks the bundle; it must not deploy it.
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:
