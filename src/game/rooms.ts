@@ -158,27 +158,27 @@ export const ROOM_META: Record<string, RoomMeta> = {
 
   /* ---- The grounds ---- */
   t: {
-    name: { uz: 'PODSTANSIYA', en: 'SUBSTATION', ru: 'ПОДСТАНЦИЯ' },
+    name: { uz: 'TOM PODSTANSIYASI', en: 'ROOF SUBSTATION', ru: 'КРЫШНАЯ ПОДСТАНЦИЯ' },
     subtitle: {
-      uz: "Asosiy darvoza quvvati shu yerdan o'tadi",
-      en: 'The main gate draws its power from here',
-      ru: 'Отсюда питаются главные ворота',
+      uz: 'Tomdagi tok simlari bir necha qavat darvoza motorini boshqaradi — uni yoq',
+      en: 'The rooftop switchroom feeds the gate motor a floor below',
+      ru: 'Крышный щиток питает мотор ворот этажом ниже',
     },
   },
   u: {
-    name: { uz: 'DARVOZA MAYDONI', en: 'GATE YARD', ru: 'ПЛОЩАДКА У ВОРОТ' },
+    name: { uz: 'TOM TERASSI', en: 'ROOF TERRACE', ru: 'ТЕРРАСА КРЫШИ' },
     subtitle: {
-      uz: "Qochish yo'li shu yerda tugaydi",
-      en: 'The way out ends here',
-      ru: 'Здесь заканчивается путь наружу',
+      uz: 'Shamol parapetni qirqadi. Darvoza narigi tomonda shimolda, xovli bir qavat pastda qolgan',
+      en: 'The parapet bites the wind. The gate is due north; the yard is one level down',
+      ru: 'Ветер режет по парапету. Ворота — на север; двор — этажом ниже',
     },
   },
   v: {
-    name: { uz: 'QABRISTON', en: 'GRAVEYARD', ru: 'КЛАДБИЩЕ' },
+    name: { uz: 'SOVUTISH MINORASI', en: 'COOLING TOWER', ru: 'ГРАДИРНЯ' },
     subtitle: {
-      uz: "Kasalxona o'liklarini shu yerga ko'mishardi",
-      en: 'The hospital used to bury its dead here',
-      ru: 'Здесь хоронили умерших из больницы',
+      uz: 'Morgni sovutadigan minoralar — quvurlar abadiy g\'uvullaydi',
+      en: 'The chillers for the morgue - pipework groans without end',
+      ru: 'Градирни для морга — трубы гудят без конца',
     },
   },
   w: {

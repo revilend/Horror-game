@@ -697,6 +697,78 @@ export function createDirtTexture(): THREE.CanvasTexture {
   return toTexture(ctx, 1, 1);
 }
 
+/**
+ * Bitumen roof membrane: rolled seams, gravel ballast, rust streaks, moss and
+ * standing water around the drains. Deliberately nothing like the interior
+ * floors, so the rooftop reads as an outdoor surface at a glance.
+ */
+export function createRoofTexture(): THREE.CanvasTexture {
+  const ctx = context2d();
+  ctx.fillStyle = '#33322f';
+  ctx.fillRect(0, 0, SIZE, SIZE);
+
+  // Weathered patches in the felt
+  blotches(ctx, 90, 'rgba(12,11,10,ALPHA)', 0.08, 0.3, 12, 64);
+  blotches(ctx, 55, 'rgba(96,88,74,ALPHA)', 0.03, 0.13, 10, 46);
+
+  // Rolled seams: the horizontal laps where the membrane sheets overlap
+  ctx.strokeStyle = 'rgba(0,0,0,0.42)';
+  ctx.lineWidth = 4;
+  for (let y = 32; y < SIZE; y += 128) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(SIZE, y);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(130,124,108,0.14)';
+  ctx.lineWidth = 2;
+  for (let y = 36; y < SIZE; y += 128) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(SIZE, y);
+    ctx.stroke();
+  }
+
+  // Loose gravel ballast swept into the corners
+  for (let i = 0; i < 420; i++) {
+    const a = rnd(0.18, 0.5).toFixed(3);
+    ctx.fillStyle = `rgba(${rnd(78, 132).toFixed(0)},${rnd(74, 124).toFixed(0)},${rnd(66, 108).toFixed(0)},${a})`;
+    ctx.fillRect(rnd(0, SIZE), rnd(0, SIZE), rnd(1, 3.4), rnd(1, 3.4));
+  }
+
+  // Rust weeping out of the fixings
+  for (let i = 0; i < 22; i++) {
+    const x = rnd(0, SIZE);
+    const y = rnd(0, SIZE);
+    ctx.fillStyle = `rgba(96,52,24,${rnd(0.08, 0.24).toFixed(3)})`;
+    ctx.fillRect(x, y, rnd(3, 9), rnd(10, 46));
+  }
+
+  // Moss creeping in from the edges
+  for (let i = 0; i < 26; i++) {
+    ctx.fillStyle = `rgba(26,36,22,${rnd(0.07, 0.22).toFixed(3)})`;
+    ctx.fillRect(rnd(0, SIZE), rnd(0, SIZE), rnd(16, 70), rnd(10, 46));
+  }
+
+  // Standing rain water pooling around the outlets
+  for (let i = 0; i < 16; i++) {
+    const x = rnd(0, SIZE);
+    const y = rnd(0, SIZE);
+    const r = rnd(14, 46);
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, 'rgba(10,14,18,0.55)');
+    grad.addColorStop(0.6, 'rgba(12,16,20,0.26)');
+    grad.addColorStop(1, 'rgba(12,16,20,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  addGrain(ctx, 38);
+  return toTexture(ctx, 1, 1);
+}
+
 /** Soft round dot used for floating dust motes. */
 export function createSoftDotTexture(): THREE.CanvasTexture {
   const ctx = context2d(64);
@@ -874,4 +946,126 @@ export function createJumpscareFaceDataUrl(): string {
   addGrain(ctx, 30);
 
   return ctx.canvas.toDataURL('image/png');
+}
+
+/**
+ * The storm lid St Jude sits under.
+ *
+ * The night sky above was drawn with its cloud band below the halfway line of
+ * the equirect map - which is under the horizon, i.e. underground. Looking up
+ * out of the courtyard you got stars and a moon on a clear night, in a game
+ * with rain, thunder and lightning.
+ *
+ * Here the deck is drawn where it belongs: a bruised ceiling from the zenith
+ * down to the horizon, heaviest and best-lit just above the treeline, with the
+ * moon tearing a hole through it and one storm cell already lit from inside.
+ */
+export function createStormSkyTexture(): THREE.CanvasTexture {
+  const width = 1024;
+  const height = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('2D canvas context is unavailable');
+
+  // The equator of an equirectangular map is the horizon.
+  const horizon = height / 2;
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, height);
+  gradient.addColorStop(0, '#0a0f18');
+  gradient.addColorStop(0.2, '#131c2a');
+  gradient.addColorStop(0.38, '#222d3c');
+  gradient.addColorStop(0.485, '#3a4453');
+  gradient.addColorStop(0.55, '#272b33');
+  gradient.addColorStop(0.75, '#131519');
+  gradient.addColorStop(1, '#07080a');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  // Stars only survive in the thinnest part of the deck, straight overhead.
+  for (let i = 0; i < 120; i++) {
+    const y = rnd(0, horizon * 0.3);
+    const fade = 1 - y / (horizon * 0.34);
+    ctx.fillStyle = `rgba(214,222,255,${(rnd(0.1, 0.5) * fade).toFixed(3)})`;
+    const size = rnd(0.7, 1.7);
+    ctx.fillRect(rnd(0, width), y, size, size);
+  }
+
+  // Moon burning through a gap in the overcast, low over the north fence.
+  const moonX = width * 0.26;
+  const moonY = horizon * 0.6;
+  const halo = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, 150);
+  halo.addColorStop(0, 'rgba(232,238,255,0.5)');
+  halo.addColorStop(0.2, 'rgba(186,204,242,0.2)');
+  halo.addColorStop(0.55, 'rgba(130,152,206,0.07)');
+  halo.addColorStop(1, 'rgba(110,132,190,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(moonX - 150, moonY - 150, 300, 300);
+
+  ctx.fillStyle = '#e9edff';
+  ctx.beginPath();
+  ctx.arc(moonX, moonY, 23, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(148,158,190,0.4)';
+  for (let i = 0; i < 7; i++) {
+    ctx.beginPath();
+    ctx.arc(moonX + rnd(-13, 13), moonY + rnd(-13, 13), rnd(2, 7), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Soft plump cloud body, lit along the top and pooling dark underneath.
+  const puff = (
+    x: number,
+    y: number,
+    rx: number,
+    ry: number,
+    rgb: string,
+    alpha: number,
+  ): void => {
+    const grad = ctx.createRadialGradient(x, y - ry * 0.35, 0, x, y, rx);
+    grad.addColorStop(0, `rgba(${rgb},${alpha})`);
+    grad.addColorStop(0.55, `rgba(${rgb},${(alpha * 0.5).toFixed(3)})`);
+    grad.addColorStop(1, `rgba(${rgb},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  for (let i = 0; i < 300; i++) {
+    // Biased towards the horizon, where a storm ceiling is thickest.
+    const t = Math.pow(Math.random(), 0.65);
+    const y = horizon * (0.93 - t * 0.95);
+    const scale = 0.55 + t * 0.95;
+    const rx = rnd(55, 185) * scale;
+    const ry = rnd(13, 40) * scale;
+    const x = rnd(-140, width + 140);
+    puff(x, y + ry * 0.4, rx, ry, '12,15,20', rnd(0.22, 0.46));
+    puff(x, y, rx * 0.88, ry * 0.82, '84,94,112', rnd(0.05, 0.18));
+  }
+
+  // A storm cell already flashing somewhere out past the graveyard.
+  const cellX = width * 0.76;
+  const cellY = horizon * 0.9;
+  const storm = ctx.createRadialGradient(cellX, cellY, 0, cellX, cellY, 200);
+  storm.addColorStop(0, 'rgba(198,216,255,0.32)');
+  storm.addColorStop(0.35, 'rgba(128,152,208,0.13)');
+  storm.addColorStop(1, 'rgba(90,110,160,0)');
+  ctx.fillStyle = storm;
+  ctx.fillRect(cellX - 200, 0, 400, horizon + 80);
+
+  // Haze where the deck comes down to meet the ground, so the horizon is soft.
+  const haze = ctx.createLinearGradient(0, horizon - 46, 0, horizon + 34);
+  haze.addColorStop(0, 'rgba(58,66,80,0)');
+  haze.addColorStop(0.55, 'rgba(70,78,92,0.5)');
+  haze.addColorStop(1, 'rgba(18,20,24,0.92)');
+  ctx.fillStyle = haze;
+  ctx.fillRect(0, horizon - 46, width, 80);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.mapping = THREE.EquirectangularReflectionMapping;
+  return texture;
 }

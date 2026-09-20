@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createSkyTexture, createSoftDotTexture } from './Textures';
+import { createSoftDotTexture, createStormSkyTexture } from './Textures';
 
 const DUST_COUNT = 680;
 const DUST_RADIUS = 26;
@@ -10,9 +10,9 @@ const MOTE_COUNT = 150;
 const MOTE_RADIUS = 15;
 const BEAM_LENGTH = 7.5;
 
-const RAIN_COUNT = 1400;
-const RAIN_RADIUS = 24;
-const RAIN_HEIGHT = 16;
+const RAIN_COUNT = 2200;
+const RAIN_RADIUS = 22;
+const RAIN_HEIGHT = 18;
 
 /**
  * Atmosphere layer: flickering lights, drifting dust, fog that thickens as the
@@ -82,7 +82,7 @@ export class HorrorEffects {
     this.ambientLight = new THREE.AmbientLight(0x3d4a5c, 0.95);
 
     scene.fog = new THREE.FogExp2(0x0a0f16, this.fogDensity);
-    scene.background = createSkyTexture();
+    scene.background = createStormSkyTexture();
 
     this.attachToScene();
     this.createDust();
@@ -112,7 +112,7 @@ export class HorrorEffects {
     if (this.motes && !this.motes.parent) this.scene.add(this.motes);
     if (this.rain && !this.rain.parent) this.scene.add(this.rain);
     if (!(this.scene.background instanceof THREE.Texture)) {
-      this.scene.background = createSkyTexture();
+      this.scene.background = createStormSkyTexture();
     }
   }
 
@@ -587,7 +587,9 @@ export class HorrorEffects {
 
     for (let i = 0; i < RAIN_COUNT; i++) {
       const x = (Math.random() - 0.5) * RAIN_RADIUS * 2;
-      const y = Math.random() * RAIN_HEIGHT;
+      // Centred on the camera's own height, so the band works on the raised
+      // terrace as well as it does down in the yard.
+      const y = (Math.random() - 0.5) * RAIN_HEIGHT;
       const z = (Math.random() - 0.5) * RAIN_RADIUS * 2;
       const length = 1.0 + Math.random() * 1.5;
       positions[i * 6] = x;
@@ -604,9 +606,9 @@ export class HorrorEffects {
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
     const material = new THREE.LineBasicMaterial({
-      color: 0xa8bcd4,
+      color: 0xbdd2e8,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.7,
       depthWrite: false,
       fog: false,
     });
@@ -627,12 +629,14 @@ export class HorrorEffects {
 
     this.rain.visible = true;
     const material = this.rain.material as THREE.LineBasicMaterial;
-    material.opacity = 0.55 * this.rainLevel;
+    material.opacity = 0.72 * this.rainLevel;
 
     const attribute = this.rain.geometry.getAttribute('position') as THREE.BufferAttribute;
     const array = attribute.array as Float32Array;
-    const wind = 1.6;
-    const origin = this.rain.position;
+    const wind = 1.1;
+    // The drops live in the line's own space and the whole line is moved onto
+    // the player, so the rain follows them up the lift to the roof.
+    const ground = -RAIN_HEIGHT * 0.5;
 
     for (let i = 0; i < RAIN_COUNT; i++) {
       const speed = this.rainSpeeds[i];
@@ -642,10 +646,13 @@ export class HorrorEffects {
       array[i * 6] += wind * dt;
       array[i * 6 + 3] += wind * dt;
 
-      if (array[i * 6 + 4] < 0) {
-        const x = origin.x + (Math.random() - 0.5) * RAIN_RADIUS * 2;
-        const z = origin.z + (Math.random() - 0.5) * RAIN_RADIUS * 2;
-        const y = RAIN_HEIGHT * (0.6 + Math.random() * 0.4);
+      if (array[i * 6 + 4] < ground) {
+        // Recycled in local space. Respawning at the camera's absolute
+        // coordinates threw every drop tens of metres out of the volume, so
+        // the rain emptied itself out in seconds and the sky looked clear.
+        const x = (Math.random() - 0.5) * RAIN_RADIUS * 2;
+        const z = (Math.random() - 0.5) * RAIN_RADIUS * 2;
+        const y = RAIN_HEIGHT * (0.35 + Math.random() * 0.15);
         array[i * 6] = x;
         array[i * 6 + 1] = y;
         array[i * 6 + 2] = z;
@@ -656,7 +663,7 @@ export class HorrorEffects {
     }
     attribute.needsUpdate = true;
 
-    this.rain.position.set(camera.position.x, 0, camera.position.z);
+    this.rain.position.set(camera.position.x, camera.position.y, camera.position.z);
   }
 
   private triggerRandomEvent(): void {

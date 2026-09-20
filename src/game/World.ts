@@ -77,9 +77,16 @@ import {
   createDuctTexture,
   createFloorTexture,
   createOuterWallTexture,
+  createRoofTexture,
   createWallTexture,
   paintBloodText,
 } from './Textures';
+import {
+  addParapetRail,
+  addRoofClutter,
+  lowerRoofParapet,
+  type ParapetConfig,
+} from './RoofDressing';
 
 const CELL = 4; // cell size in world units
 const WALL_H = 3.5;
@@ -1199,6 +1206,12 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   dirtTex.repeat.set(3, 1);
   const dirtMat = new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 1, metalness: 0 });
 
+  // The terrace gets its own surface. Sharing the courtyard's tarmac was what
+  // made the rooftop read as "more of the yard": same ground, same props.
+  const roofTex = createRoofTexture();
+  roofTex.repeat.set(COLS / 2, ROOF_ROWS / 2);
+  const roofMat = new THREE.MeshStandardMaterial({ map: roofTex, roughness: 1, metalness: 0.04 });
+
   const doorMat = new THREE.MeshStandardMaterial({ map: createDoorTexture(), roughness: 0.55, metalness: 0.5 });
 
   const lockMat = new THREE.MeshStandardMaterial({
@@ -1460,7 +1473,7 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
 
     const terrace = new THREE.Mesh(
       new THREE.PlaneGeometry(COLS * CELL, ROOF_ROWS * CELL),
-      asphaltMat,
+      roofMat,
     );
     terrace.rotation.x = -Math.PI / 2;
     terrace.position.set(
@@ -1553,6 +1566,18 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   addWallMesh(outdoorWallGeometries, outerWallMat);
   // The roof band's slabs are the same walls, lifted onto the podium.
   for (const geometry of roofWallGeometries) geometry.translate(0, ROOF_Y, 0);
+  // ...and then cut down to a parapet. A terrace has to see out over the
+  // compound: with a storey-tall wall around it the roof read as one more
+  // corridor, and the courtyard was the only thing anyone could compare it to.
+  const roofParapet: ParapetConfig = {
+    cell: CELL,
+    cols: COLS,
+    roofRows: ROOF_ROWS,
+    roofY: ROOF_Y,
+    wallHeight: WALL_H,
+    parapetHeight: 1.15,
+  };
+  roofWallGeometries.push(...lowerRoofParapet(roofWallGeometries, roofParapet));
   addWallMesh(roofWallGeometries, outerWallMat);
 
   // --- Fixtures: doors, desk drawers and lockers --------------------------
@@ -1880,6 +1905,8 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   const roofProps = new THREE.Group();
   roofProps.position.y = ROOF_Y;
   props.add(roofProps);
+  // A guard rail along the terrace's edges, skipping the gate's opening.
+  addParapetRail(roofProps, LAYOUT, roofParapet);
   for (let row = 0; row <= OUTDOOR_END; row++) {
     const parent = row < ROOF_ROWS ? roofProps : props;
     for (let col = 0; col < COLS; col++) {
@@ -1893,6 +1920,14 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
       // of it.
       if (spotTaken.has(`${row}:${col}`)) continue;
       const sides = openSidesAt(grid, row, col);
+
+      // Up here it is plant, not yard. The rooftop band shares the compound's
+      // plan, so without this it was dressed as the compound: headstones, dead
+      // trees and parked cars, on a roof.
+      if (row < ROOF_ROWS) {
+        if (Math.random() < 0.3) addRoofClutter(parent, cx, cz, sides);
+        continue;
+      }
 
       if (char === 'v') {
         // Graveyard: headstones in rough rows, leaning with age
