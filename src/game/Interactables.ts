@@ -29,10 +29,15 @@ export type InteractableKind =
   | 'mirror'
   | 'extinguisher'
   | 'cart'
+  | 'phone'
+  | 'vialrack'
   | 'van';
 
 /** Things a prop can hand over. Every one is a real inventory item. */
-export type LootId = 'acid' | 'battery' | 'bottle' | 'boltcutters' | 'ignition';
+export type LootId = 'acid' | 'battery' | 'bottle' | 'boltcutters' | 'ignition' | 'vial';
+
+/** How many ampoules a full vial rack holds. */
+export const VIAL_RACK_CAPACITY = 6;
 
 export interface Interactable {
   kind: InteractableKind;
@@ -44,8 +49,13 @@ export interface Interactable {
 
   /** The part that swings: cabinet doors, the freezer leaf, the van bonnet. */
   hinge: THREE.Group | null;
-  /** The part that turns: a valve handwheel, a radio dial. */
-  wheel: THREE.Mesh | null;
+  /** The part that turns: a valve handwheel, a radio dial, a phone dial. */
+  wheel: THREE.Object3D | null;
+  /**
+   * The loose end of a phone's lead. It dangles dead while the wire is cut and
+   * is drawn back up to the box once the line is spliced.
+   */
+  cord: THREE.Object3D | null;
   /** Emissive surface that lights up: screens and bulbs. */
   panel: THREE.MeshStandardMaterial | null;
   /** The lamp behind a lightbox or a monitor. */
@@ -139,6 +149,7 @@ function base(kind: InteractableKind, group: THREE.Group): Interactable {
     floor: 0,
     hinge: null,
     wheel: null,
+    cord: null,
     panel: null,
     lamp: null,
     water: null,
@@ -311,6 +322,148 @@ export function createCrashCart(mats: InteractableMaterials): Interactable {
   lever.add(foot);
   prop.group.add(lever);
   prop.hinge = lever;
+
+  return prop;
+}
+
+/**
+ * A wall telephone with its lead hanging cut out of the box. Tapping it once
+ * splices the wire back together; tapping it again lifts the handset and the
+ * line plays whatever the exchange is still repeating into the dark.
+ */
+export function createWallPhone(mats: InteractableMaterials): Interactable {
+  const prop = base('phone', new THREE.Group());
+
+  // Bakelite box screwed to the plaster, front face at local +z.
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.46, 0.05), mats.rust);
+  plate.position.y = 1.36;
+  prop.group.add(plate);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.36, 0.14), mats.plastic);
+  body.position.set(0, 1.36, 0.07);
+  prop.group.add(body);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.17), mats.plastic);
+  lip.position.set(0, 1.51, 0.08);
+  prop.group.add(lip);
+
+  // The rotary dial. It spins on every call and walks back to rest.
+  const dial = new THREE.Group();
+  dial.position.set(0, 1.3, 0.14);
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.028, 16), mats.brass);
+  disc.rotation.x = Math.PI / 2;
+  dial.add(disc);
+  for (let i = 0; i < 10; i++) {
+    const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.032, 6), mats.plastic);
+    hole.rotation.x = Math.PI / 2;
+    const angle = (i / 10) * Math.PI * 2;
+    hole.position.set(Math.cos(angle) * 0.055, Math.sin(angle) * 0.055, 0);
+    dial.add(hole);
+  }
+  const stop = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.03, 0.02), mats.brass);
+  stop.position.set(0.06, 0.06, 0.02);
+  dial.add(stop);
+  prop.group.add(dial);
+  prop.wheel = dial;
+
+  // The handset on its cradle. This is the part that lifts.
+  const handset = new THREE.Group();
+  handset.position.set(0, 1.53, 0.15);
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.05), mats.plastic);
+  handset.add(bar);
+  for (const side of [-1, 1]) {
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.07, 10), mats.plastic);
+    cup.position.set(side * 0.12, 0, 0.01);
+    handset.add(cup);
+  }
+  prop.group.add(handset);
+  prop.hinge = handset;
+
+  // The lead: a stub out of the box and a dead length of cord hanging off it.
+  const cord = new THREE.Group();
+  cord.position.set(0.13, 1.28, 0.1);
+  for (let i = 0; i < 4; i++) {
+    const link = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.07, 6), mats.plastic);
+    link.position.set(0, -0.05 - i * 0.075, 0);
+    cord.add(link);
+  }
+  // The frayed end, still bare where it was cut through.
+  const fray = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.008, 0.06, 6), mats.rust);
+  fray.position.set(0, -0.36, 0);
+  cord.add(fray);
+  prop.group.add(cord);
+  prop.cord = cord;
+
+  // The line lamp: dead until the splice takes, then warm.
+  const lamp = emissiveMaterial(0x54ff9b, 0);
+  const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.02, 0.02), lamp);
+  bulb.position.set(-0.09, 1.46, 0.14);
+  prop.group.add(bulb);
+  prop.panel = lamp;
+
+  return prop;
+}
+
+/**
+ * A rack of glass ampoules on a trolley top. Tapping it takes one vial at a
+ * time - a vial is lighter and throws further than a bottle, and it breaks
+ * with a much sharper crack, so the two are worth having both of.
+ */
+export function createVialRack(mats: InteractableMaterials): Interactable {
+  const prop = base('vialrack', new THREE.Group());
+
+  const tray = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.03, 0.3), mats.metal);
+  tray.position.y = 0.88;
+  prop.group.add(tray);
+  for (const [lx, lz] of [
+    [-0.2, -0.11],
+    [0.2, -0.11],
+    [-0.2, 0.11],
+    [0.2, 0.11],
+  ] as Array<[number, number]>) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.12, 6), mats.metal);
+    leg.position.set(lx, 0.8, lz);
+    prop.group.add(leg);
+  }
+  // The wooden block the ampoules stand in.
+  const block = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.06, 0.22), mats.wood);
+  block.position.y = 0.92;
+  prop.group.add(block);
+
+  // Six ampoules, in two rows. Each is its own mesh so the rack visibly empties.
+  const pale = new THREE.MeshStandardMaterial({
+    color: 0xd7ecf2,
+    roughness: 0.1,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.68,
+  });
+  for (let i = 0; i < VIAL_RACK_CAPACITY; i++) {
+    const col = i % 3;
+    const row = Math.floor(i / 3);
+    const ampoule = new THREE.Group();
+    ampoule.name = 'ampoule';
+    ampoule.position.set(-0.15 + col * 0.15, 0.95, -0.05 + row * 0.1);
+
+    const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.13, 8), pale);
+    glass.position.y = 0.065;
+    ampoule.add(glass);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.022, 0.04, 8), pale);
+    neck.position.y = 0.15;
+    ampoule.add(neck);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.02, 8), mats.brass);
+    cap.position.y = 0.18;
+    ampoule.add(cap);
+    // A dreg of something dark left in the glass.
+    const dreg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.05, 8), mats.water);
+    dreg.position.y = 0.03;
+    ampoule.add(dreg);
+
+    prop.group.add(ampoule);
+  }
+
+  // A tally plate, so an emptied rack still reads as a thing that was here.
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.06, 0.01), mats.rust);
+  plate.position.set(0, 0.83, 0.16);
+  prop.group.add(plate);
 
   return prop;
 }
@@ -828,6 +981,12 @@ export function createInteractable(
     case 'cart':
       prop = createCrashCart(mats);
       break;
+    case 'phone':
+      prop = createWallPhone(mats);
+      break;
+    case 'vialrack':
+      prop = createVialRack(mats);
+      break;
     case 'van':
       prop = createAmbulanceVan(mats);
       break;
@@ -852,6 +1011,8 @@ const PROMPT_HEIGHT: Record<InteractableKind, number> = {
   mirror: 1.5,
   extinguisher: 1.28,
   cart: 0.95,
+  phone: 1.36,
+  vialrack: 1.05,
   van: 1.35,
 };
 
@@ -884,6 +1045,8 @@ export function interactableRadius(prop: Interactable): number {
       return 0.75;
     case 'cart':
       return 0.55;
+    case 'vialrack':
+      return 0.36;
     case 'bin':
     case 'sink':
     case 'cabinet':
@@ -903,6 +1066,44 @@ function easeInOut(t: number): number {
 
 /** True while the prop still has something moving. */
 export function advanceInteractable(prop: Interactable, dt: number, time: number): void {
+  // The telephone has its own motion, all of it, so it does not have to fight
+  // the generic hinge easing below.
+  if (prop.kind === 'phone') {
+    if (prop.hinge) {
+      // The handset comes off the cradle while the line is open.
+      const want = prop.on ? -0.55 : 0;
+      prop.hinge.rotation.x += (want - prop.hinge.rotation.x) * Math.min(1, dt * 8);
+    }
+    if (prop.wheel) {
+      // One full turn of the dial per call, easing back to rest.
+      const dialWant = prop.uses * Math.PI * 1.7;
+      prop.wheelAngle += (dialWant - prop.wheelAngle) * Math.min(1, dt * 5);
+      prop.wheel.rotation.z = -prop.wheelAngle;
+    }
+    if (prop.cord) {
+      // Cut: the lead hangs slack and sways. Spliced: it is drawn up flat.
+      const want = prop.on ? -0.62 : -0.05;
+      prop.cord.rotation.z += (want - prop.cord.rotation.z) * Math.min(1, dt * 4);
+      prop.cord.position.y = prop.on ? 0 : Math.sin(time * 1.2) * 0.014;
+    }
+    if (prop.panel) {
+      const want = prop.on ? 1 : 0;
+      prop.panel.emissiveIntensity += (want - prop.panel.emissiveIntensity) * Math.min(1, dt * 3);
+    }
+    return;
+  }
+
+  // The vial rack empties one ampoule at a time, so the shelf it stands on
+  // visibly runs down as the player arms themselves.
+  if (prop.kind === 'vialrack') {
+    let index = 0;
+    for (const child of prop.group.children) {
+      if (child.name !== 'ampoule') continue;
+      child.visible = index >= prop.uses;
+      index++;
+    }
+  }
+
   // Leaves: a cabinet door, the freezer, the bonnet, the painting.
   if (prop.hinge) {
     if (prop.kind === 'switch') {

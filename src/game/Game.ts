@@ -27,7 +27,7 @@ import {
   type DrawerFixture,
   type LockerFixture,
 } from './Fixtures';
-import { advanceInteractable, type Interactable } from './Interactables';
+import { advanceInteractable, VIAL_RACK_CAPACITY, type Interactable } from './Interactables';
 import {
   QUEST_STAGES,
   TOTAL_QUESTS,
@@ -722,7 +722,7 @@ export class Game {
     document.getElementById('throw-btn')?.addEventListener('pointerdown', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      this.throwBottle();
+      this.throwBestGlass();
     });
 
     // Crouch button uses pointerdown/pointerup so it does not stick
@@ -743,7 +743,7 @@ export class Game {
     if (event.code === 'KeyF' && this.state === 'playing') this.toggleFlashlight();
     if (event.code === 'KeyM' && this.state === 'playing') this.minimap?.toggle();
     if (event.code === 'KeyE' && this.state === 'playing') this.interact();
-    if (event.code === 'KeyB' && this.state === 'playing') this.throwBottle();
+    if (event.code === 'KeyB' && this.state === 'playing') this.throwBestGlass();
     if (event.code === 'ShiftLeft' && this.state === 'playing') this.player?.setRunning(true);
     if ((event.code === 'ControlLeft' || event.code === 'ControlRight') && this.state === 'playing') this.player?.setCrouching(true);
       if (event.code === 'Escape') {
@@ -2016,6 +2016,12 @@ export class Game {
         return prop.spent ? t('act.binEmpty') : t('act.bin');
       case 'cart':
         return prop.on ? t('act.cartBraced') : t('act.cart');
+      case 'phone':
+        // The lead is the first thing to fix: until it is spliced the handset
+        // has nothing to say.
+        return prop.on ? t('act.phoneListen') : t('act.phoneRepair');
+      case 'vialrack':
+        return prop.spent ? t('act.vialEmpty') : t('act.vialTake');
       case 'van':
         if (prop.spent) return t('act.vanIgnition');
         return prop.open > 0.5 ? t('act.vanBattery') : t('act.vanBonnet');
@@ -2065,6 +2071,37 @@ export class Game {
         this.audio?.playElevatorGate();
         this.refreshMonsterColliders();
         this.showMessage(prop.on ? t('msg.cartBraced') : t('msg.cartReleased'), 3200);
+        return;
+      }
+
+      case 'phone': {
+        if (!prop.on) {
+          // A cut lead: splice it. Two bare ends, one spark, and the line is
+          // live - after which the handset is worth lifting.
+          prop.on = true;
+          prop.uses = 0;
+          this.audio?.playWireSplice();
+          this.showMessage(t('msg.phoneRepaired'), 4200);
+          return;
+        }
+        // Live: the exchange is still repeating what it was told to repeat.
+        prop.uses++;
+        this.audio?.playDispatchAudio();
+        this.showMessage(prop.uses === 1 ? t('msg.phoneDispatch') : t('msg.phoneReplay'), 5200);
+        return;
+      }
+
+      case 'vialrack': {
+        if (prop.spent) {
+          this.showMessage(t('msg.vialEmpty'), 2400);
+          return;
+        }
+        prop.uses++;
+        this.inventory?.add('vial');
+        this.audio?.playVialClink();
+        const left = Math.max(0, VIAL_RACK_CAPACITY - prop.uses);
+        if (left === 0) prop.spent = true;
+        this.showMessage(t('msg.vialTaken', { left }), 2800);
         return;
       }
 
@@ -2798,20 +2835,41 @@ export class Game {
       this.showMessage(t('msg.battery'), 2000);
       return;
     }
-    if (id === 'bottle') {
-      this.throwBottle();
+    if (id === 'bottle' || id === 'vial') {
+      this.throwGlass(id);
       return;
     }
     this.showMessage(t('msg.itemUsed', { item: t(`item.${id}.name`), hint: t(`item.${id}.hint`) }), 2600);
   }
 
+  /** The throw key: the sharper ampoule if there is one, else a bottle. */
+  private throwBestGlass(): void {
+    if (this.inventory?.has('vial')) {
+      this.throwGlass('vial');
+      return;
+    }
+    this.throwGlass('bottle');
+  }
+
   /**
-   * Hurl a collected glass vial a few metres ahead. The smash pulls the
+   * Hurl a collected bottle or vial a few metres ahead. The smash pulls the
    * creature to that spot, buying the player a corridor of distance.
+   *
+   * The two are deliberately different objects rather than one reskin: a
+   * bottle is heavy dark glass that lands short and low with a dull thump, an
+   * ampoule is thin pale glass that carries further, flies flatter and cracks
+   * much sharper. Same trick, different reach.
    */
-  private throwBottle(): void {
+  private throwGlass(item: 'bottle' | 'vial'): void {
     if (!this.player || !this.monster || !this.scene) return;
-    if (!this.inventory?.take('bottle')) return;
+    if (!this.inventory?.take(item)) return;
+
+    const thin = item === 'vial';
+    const colour = thin ? 0xddf4f8 : 0x9fd8c8;
+    const radius = thin ? 0.045 : 0.07;
+    const speed = thin ? 15 : 11;
+    const lift = thin ? 3.4 : 4.2;
+    const tone = thin ? 1.45 : 0.8;
 
     // Launch from the camera, in the direction the player is facing.
     const origin = new THREE.Vector3();
@@ -2819,39 +2877,39 @@ export class Game {
     const direction = new THREE.Vector3();
     this.camera?.getWorldDirection(direction);
 
-    const vial = new THREE.Mesh(
-      new THREE.SphereGeometry(0.07, 8, 8),
-      new THREE.MeshStandardMaterial({ color: 0x9fd8c8, roughness: 0.15, transparent: true, opacity: 0.7 })
+    const flight = new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 8, 8),
+      new THREE.MeshStandardMaterial({ color: colour, roughness: 0.15, transparent: true, opacity: 0.7 })
     );
-    vial.position.copy(origin).addScaledVector(direction, 0.5);
-    this.scene.add(vial);
+    flight.position.copy(origin).addScaledVector(direction, 0.5);
+    this.scene.add(flight);
 
     // Simple ballistic arc, resolved with raycast-free grid sampling.
-    const velocity = direction.clone().multiplyScalar(11);
-    velocity.y = 4.2;
+    const velocity = direction.clone().multiplyScalar(speed);
+    velocity.y = lift;
     let landed = false;
     const step = 1 / 60;
     const tick = (): void => {
       if (landed) return;
       velocity.y -= 14 * step;
-      vial.position.addScaledVector(velocity, step);
-      vial.rotation.x += 9 * step;
-      vial.rotation.z += 7 * step;
+      flight.position.addScaledVector(velocity, step);
+      flight.rotation.x += 9 * step;
+      flight.rotation.z += 7 * step;
 
       const floorY = 0.08;
-      const outOfBounds = vial.position.length() > 260;
-      if (vial.position.y <= floorY || outOfBounds) {
+      const outOfBounds = flight.position.length() > 260;
+      if (flight.position.y <= floorY || outOfBounds) {
         landed = true;
-        const impact = vial.position.clone();
-        this.scene?.remove(vial);
-        (vial.material as THREE.Material).dispose();
-        vial.geometry.dispose();
+        const impact = flight.position.clone();
+        this.scene?.remove(flight);
+        (flight.material as THREE.Material).dispose();
+        flight.geometry.dispose();
 
-        this.audio?.playGlassShatter();
-        this.spawnShardBurst(impact);
+        this.audio?.playGlassShatter(tone);
+        this.spawnShardBurst(impact, thin);
         // The noise drags the creature off to look, even mid-chase.
         this.monster?.goInvestigateAt(impact);
-        this.showMessage(t('msg.glass'), 2200);
+        this.showMessage(thin ? t('msg.glassVial') : t('msg.glass'), 2200);
       } else {
         requestAnimationFrame(tick);
       }
@@ -2859,10 +2917,10 @@ export class Game {
     requestAnimationFrame(tick);
   }
 
-  /** A brief spray of bright glass shards where the vial hit. */
-  private spawnShardBurst(at: THREE.Vector3): void {
+  /** A brief spray of bright glass shards where the glass hit. */
+  private spawnShardBurst(at: THREE.Vector3, thin = false): void {
     if (!this.scene) return;
-    const count = 14;
+    const count = thin ? 18 : 14;
     const positions = new Float32Array(count * 3);
     const speeds: THREE.Vector3[] = [];
     for (let i = 0; i < count; i++) {
@@ -2876,8 +2934,8 @@ export class Game {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     const material = new THREE.PointsMaterial({
-      color: 0xcfeee4,
-      size: 0.07,
+      color: thin ? 0xe8fbff : 0xcfeee4,
+      size: thin ? 0.05 : 0.07,
       transparent: true,
       opacity: 0.95,
       depthWrite: false,

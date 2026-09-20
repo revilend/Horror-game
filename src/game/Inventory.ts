@@ -8,7 +8,18 @@ import { t } from './i18n';
  * gated on having the right object in hand.
  */
 
-export type ItemId = 'key' | 'card' | 'fuse' | 'crowbar' | 'battery' | 'bottle' | 'acid' | 'ignition' | 'boltcutters' | 'uv';
+export type ItemId =
+  | 'key'
+  | 'card'
+  | 'fuse'
+  | 'crowbar'
+  | 'battery'
+  | 'bottle'
+  | 'vial'
+  | 'acid'
+  | 'ignition'
+  | 'boltcutters'
+  | 'uv';
 
 export interface ItemDef {
   name: string;
@@ -68,6 +79,14 @@ export const ITEM_DEFS: Record<ItemId, ItemDef> = {
     icon: '\u{1F37A}',
     get hint() { return t('item.bottle.hint'); },
     usable: true, perSlot: 5,
+  },
+  vial: {
+    // Lighter and thinner than a bottle: it flies further and cracks sharper,
+    // so both are worth carrying.
+    get name() { return t('item.vial.name'); },
+    icon: '\u{1F9EA}',
+    get hint() { return t('item.vial.hint'); },
+    usable: true, perSlot: 4,
   },
   acid: {
     // Read through i18n so the strip and its tooltips follow the

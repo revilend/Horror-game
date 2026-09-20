@@ -392,7 +392,13 @@ interface PropPlan {
 }
 
 /** Kinds that belong on a wall rather than in the middle of a room. */
-const WALL_KINDS = new Set<InteractableKind>(['switch', 'mirror', 'lightbox', 'extinguisher']);
+const WALL_KINDS = new Set<InteractableKind>([
+  'switch',
+  'mirror',
+  'lightbox',
+  'extinguisher',
+  'phone',
+]);
 
 const PROP_PLAN: PropPlan[] = [
   /* ---- 1F: clinic lobby, reception, pharmacy, store room ---------------- */
@@ -417,6 +423,11 @@ const PROP_PLAN: PropPlan[] = [
   // into a doorway and made to mean something.
   { kind: 'cart', anchor: { row: 20, col: 6 } },
   { kind: 'cart', anchor: { row: 28, col: 20 } },
+  // Wall telephones: one per floor, on the wall beside a doorway.
+  { kind: 'phone', anchor: { row: 20, col: 18 } },
+  // Ampoules, racked on a trolley top in the treatment rooms.
+  { kind: 'vialrack', anchor: { row: 22, col: 12 } },
+  { kind: 'vialrack', anchor: { row: 30, col: 22 } },
 
   /* ---- 2F: surgical ward, Room 404, operating theatre ------------------- */
   { kind: 'switch', anchor: { row: 34, col: 6 } },
@@ -433,6 +444,9 @@ const PROP_PLAN: PropPlan[] = [
   { kind: 'extinguisher', anchor: { row: 35, col: 18 } },
   { kind: 'cart', anchor: { row: 34, col: 12 } },
   { kind: 'cart', anchor: { row: 40, col: 22 } },
+  { kind: 'phone', anchor: { row: 40, col: 8 } },
+  { kind: 'vialrack', anchor: { row: 37, col: 14 } },
+  { kind: 'vialrack', anchor: { row: 42, col: 6 } },
 
   /* ---- B1: boiler room, steam, morgue ---------------------------------- */
   { kind: 'valve', anchor: { row: 45, col: 6 } },
@@ -447,6 +461,8 @@ const PROP_PLAN: PropPlan[] = [
   { kind: 'cabinet', anchor: { row: 44, col: 20 }, loot: 'bottle' },
   { kind: 'radio', anchor: { row: 48, col: 22 } },
   { kind: 'cart', anchor: { row: 44, col: 8 } },
+  { kind: 'phone', anchor: { row: 46, col: 22 } },
+  { kind: 'vialrack', anchor: { row: 45, col: 12 } },
 
   /* ---- 3F: director's wing -------------------------------------------- */
   { kind: 'switch', anchor: { row: 52, col: 6 } },
@@ -459,6 +475,8 @@ const PROP_PLAN: PropPlan[] = [
   { kind: 'extinguisher', anchor: { row: 56, col: 10 } },
   { kind: 'monitor', anchor: { row: 50, col: 8 }, yaw: Math.PI },
   { kind: 'cart', anchor: { row: 50, col: 18 } },
+  { kind: 'phone', anchor: { row: 50, col: 6 } },
+  { kind: 'vialrack', anchor: { row: 53, col: 18 } },
 
   /* ---- The grounds: the courtyard, the driveway and the van ----------- */
   { kind: 'van', anchor: { row: 13, col: 20 }, yaw: Math.PI },
@@ -1566,7 +1584,7 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   const propMats = makeInteractableMaterials();
   const propCells = new Set<string>();
   for (const spec of PROP_PLAN) {
-    const cell = nearestPropCell(grid, spec.anchor, propCells);
+    const cell = nearestPropCell(grid, spec.anchor, propCells, WALL_KINDS.has(spec.kind));
     if (!cell) continue;
     propCells.add(`${cell.row}:${cell.col}`);
 
@@ -3010,6 +3028,7 @@ function nearestPropCell(
   grid: number[][],
   anchor: { row: number; col: number },
   taken: Set<string>,
+  needsWall = false,
 ): { row: number; col: number } | null {
   for (let radius = 0; radius <= 6; radius++) {
     for (let dr = -radius; dr <= radius; dr++) {
@@ -3021,6 +3040,10 @@ function nearestPropCell(
         if (!isOpen(grid, row, col)) continue;
         if (LAYOUT[row][col] === '+') continue;
         if (taken.has(`${row}:${col}`)) continue;
+        // A wall-mounted prop has to be able to reach a wall: a switch or a
+        // telephone dropped in the open middle of a corridor would hang in mid
+        // air with nothing to be screwed to.
+        if (needsWall && !hasWallNeighbour(grid, row, col)) continue;
         // Never in the mouth of a lift cage, which is the one cell per floor
         // the player has to walk through.
         let inCage = false;
@@ -3033,6 +3056,19 @@ function nearestPropCell(
     }
   }
   return null;
+}
+
+/** True when any orthogonal neighbour of a cell is solid wall. */
+function hasWallNeighbour(grid: number[][], row: number, col: number): boolean {
+  for (const [dr, dc] of [
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1],
+  ] as Array<[number, number]>) {
+    if (!isOpen(grid, row + dr, col + dc)) return true;
+  }
+  return false;
 }
 
 /**

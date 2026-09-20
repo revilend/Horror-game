@@ -428,6 +428,176 @@ export class HorrorAudio {
   }
 
   /**
+   * A single ampoule lifted off the rack: a small, bright tick of glass, with
+   * the brass cap ringing a beat behind it.
+   */
+  playVialClink(): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+
+    const len = Math.floor(this.ctx.sampleRate * 0.22);
+    const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (len * 0.035));
+    }
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 4200;
+    filter.Q.value = 3.2;
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.24, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+    source.start(now);
+
+    const ring = this.ctx.createOscillator();
+    ring.type = 'sine';
+    ring.frequency.setValueAtTime(2100, now);
+    ring.frequency.exponentialRampToValueAtTime(1400, now + 0.16);
+    const ringGain = this.ctx.createGain();
+    ringGain.gain.setValueAtTime(0.08, now);
+    ringGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+    ring.connect(ringGain);
+    ringGain.connect(this.masterGain);
+    ring.start(now);
+    ring.stop(now + 0.2);
+  }
+
+  /**
+   * A severed line spliced back together: the spark when the wire touches,
+   * then the exchange tone finding the pair. Also used when the handset comes
+   * off a live phone.
+   */
+  playWireSplice(): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+
+    // The spark: a very short, very bright crack.
+    const len = Math.floor(this.ctx.sampleRate * 0.05);
+    const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (len * 0.02));
+    }
+    const spark = this.ctx.createBufferSource();
+    spark.buffer = buffer;
+    const sparkFilter = this.ctx.createBiquadFilter();
+    sparkFilter.type = 'highpass';
+    sparkFilter.frequency.value = 2600;
+    const sparkGain = this.ctx.createGain();
+    sparkGain.gain.value = 0.4;
+    spark.connect(sparkFilter);
+    sparkFilter.connect(sparkGain);
+    sparkGain.connect(this.masterGain);
+    spark.start(now);
+
+    // The dial tone: two tones a third apart, wobbling as the pair settles.
+    for (const freq of [430, 540]) {
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + 0.04);
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.07, now + 0.06);
+      gain.gain.setValueAtTime(0.07, now + 0.5);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.95);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(now + 0.04);
+      osc.stop(now + 1.0);
+    }
+  }
+
+  /**
+   * The far end of a cut-in telephone line: a clipped, gated voice heard
+   * through a badly earthing exchange. It is not speech - it is the shape of
+   * speech, which is worse.
+   */
+  playDispatchAudio(): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+    const duration = 6.5;
+
+    // A band of noise, gated into syllables so it reads as somebody talking.
+    const len = Math.floor(this.ctx.sampleRate * duration);
+    const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      data[i] = (Math.random() * 2 - 1) * 0.5;
+    }
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+
+    const band = this.ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.setValueAtTime(700, now);
+    band.Q.value = 4.5;
+
+    const gate = this.ctx.createGain();
+    gate.gain.value = 0;
+    // Syllables of roughly 120-260 ms, with gaps, walking down the band so the
+    // "voice" changes pitch as it goes.
+    let t = 0;
+    let down = true;
+    while (t < duration - 0.3) {
+      const syllable = 0.12 + Math.random() * 0.14;
+      const gap = 0.05 + Math.random() * 0.12;
+      gate.gain.setValueAtTime(down ? 0.55 : 0.02, now + t);
+      gate.gain.linearRampToValueAtTime(down ? 0.05 : 0.5, now + t + syllable * 0.8);
+      band.frequency.linearRampToValueAtTime(down ? 900 : 640, now + t + syllable);
+      down = !down;
+      t += syllable + gap;
+    }
+    gate.gain.setValueAtTime(0.02, now + duration - 0.3);
+
+    const hiss = this.ctx.createGain();
+    hiss.gain.value = 0.05;
+    const hissFilter = this.ctx.createBiquadFilter();
+    hissFilter.type = 'highpass';
+    hissFilter.frequency.value = 2000;
+
+    source.connect(band);
+    band.connect(gate);
+    gate.connect(this.masterGain);
+
+    // Line hiss on its own path, so the gaps are never silent.
+    const hissSource = this.ctx.createBufferSource();
+    hissSource.buffer = buffer;
+    hissSource.connect(hissFilter);
+    hissFilter.connect(hiss);
+    hiss.connect(this.masterGain);
+
+    source.start(now);
+    hissSource.start(now);
+    source.stop(now + duration);
+    hissSource.stop(now + duration);
+
+    // And the exchange clicks the line shut at the end.
+    const squelch = this.ctx.createBufferSource();
+    squelch.buffer = buffer;
+    const squelchFilter = this.ctx.createBiquadFilter();
+    squelchFilter.type = 'lowpass';
+    squelchFilter.frequency.value = 900;
+    const squelchGain = this.ctx.createGain();
+    squelchGain.gain.setValueAtTime(0.0001, now + duration - 0.14);
+    squelchGain.gain.linearRampToValueAtTime(0.16, now + duration - 0.1);
+    squelchGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    squelch.connect(squelchFilter);
+    squelchFilter.connect(squelchGain);
+    squelchGain.connect(this.masterGain);
+    squelch.start(now + duration - 0.14);
+    squelch.stop(now + duration);
+  }
+
+  /**
    * A dying fluorescent ballast: a short mains hum with an electric stutter on
    * top of it, played whenever a ceiling tube blinks out.
    */
@@ -474,7 +644,11 @@ export class HorrorAudio {
   }
 
   /** Glass vial shattering on the floor - sharp, bright, very loud. */
-  playGlassShatter(): void {
+  /**
+   * @param tone Pitch of the smash. 1 is the default; a thin ampoule wants
+   *   more (brighter, higher), a thick bottle wants less (duller, heavier).
+   */
+  playGlassShatter(tone: number = 1): void {
     if (!this.ctx || !this.masterGain) return;
     const now = this.ctx.currentTime;
 
@@ -489,7 +663,7 @@ export class HorrorAudio {
     crash.buffer = buffer;
     const crashFilter = this.ctx.createBiquadFilter();
     crashFilter.type = 'highpass';
-    crashFilter.frequency.value = 3000;
+    crashFilter.frequency.value = 3000 * tone;
     const crashGain = this.ctx.createGain();
     crashGain.gain.value = 0.5;
     crash.connect(crashFilter);
@@ -502,7 +676,7 @@ export class HorrorAudio {
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       osc.type = 'triangle';
-      osc.frequency.value = 2400 + Math.random() * 3600;
+      osc.frequency.value = (2400 + Math.random() * 3600) * tone;
       gain.gain.value = 0;
       osc.connect(gain);
       gain.connect(this.masterGain);
