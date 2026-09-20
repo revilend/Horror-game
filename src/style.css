@@ -550,6 +550,7 @@ body {
   position: absolute;
   left: 50%;
   bottom: 22%;
+  z-index: 15;
   transform: translate(-50%, 8px);
   display: flex;
   align-items: center;
@@ -581,6 +582,7 @@ body {
   position: absolute;
   left: 50%;
   bottom: calc(22% + 46px);
+  z-index: 15;
   transform: translate(-50%, 8px);
   display: flex;
   align-items: center;
@@ -691,6 +693,7 @@ body.in-locker #fixture-prompt .fixture-key {
   position: absolute;
   left: 16px;
   bottom: 70px;
+  z-index: 15;
   max-width: min(360px, 60vw);
   padding: 6px 10px;
   font-size: 12px;
@@ -714,6 +717,7 @@ body.in-locker #fixture-prompt .fixture-key {
   position: absolute;
   left: 16px;
   bottom: 16px;
+  z-index: 15;
   display: flex;
   gap: 7px;
   opacity: 0;
