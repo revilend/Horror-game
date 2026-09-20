@@ -996,7 +996,8 @@ export function createInteractable(
 }
 
 /** How far above the floor a prop's prompt anchor sits. */
-const PROMPT_HEIGHT: Record<InteractableKind, number> = {
+/** How high above its own floor each kind's action prompt sits. */
+export const PROMPT_HEIGHT: Record<InteractableKind, number> = {
   switch: 1.26,
   cabinet: 1.62,
   bin: 0.5,
@@ -1025,10 +1026,13 @@ export function placeInteractable(
   floor: number,
   loot: LootId | null,
   locked: boolean,
+  y = 0,
 ): void {
-  prop.group.position.set(x, 0, z);
+  // `y` is the height of the floor it stands on: the roof terrace is raised,
+  // and its props have to travel up with it.
+  prop.group.position.set(x, y, z);
   prop.group.rotation.y = yaw;
-  prop.centre.set(x, PROMPT_HEIGHT[prop.kind], z);
+  prop.centre.set(x, PROMPT_HEIGHT[prop.kind] + y, z);
   prop.floor = floor;
   prop.loot = loot;
   prop.locked = locked;

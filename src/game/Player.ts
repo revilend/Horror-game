@@ -80,17 +80,38 @@ export class Player {
   /** When true, the player ignores all movement and look input. */
   inputDisabled = false;
 
+  /** The last spot the player was known to be standing legally, per axis. */
+  private safeX = 0;
+  private safeZ = 0;
+
+  /**
+   * Height of the floor under the player's feet.
+   *
+   * There is no vertical physics - the eye is the only thing that moves in y -
+   * so this is what lifts the player onto the raised roof terrace and brings
+   * them back down, and what makes them rise with the cage mid-ride.
+   */
+  private groundHeight = 0;
+
   constructor(camera: THREE.PerspectiveCamera) {
     this.camera = camera;
     this.position = new THREE.Vector3();
   }
 
+  /** Sets the height of the floor the player is standing on. */
+  setGroundHeight(height: number): void {
+    this.groundHeight = height;
+  }
+
   init(grid: number[][], spawn: THREE.Vector3): void {
     this.grid = grid;
+    this.groundHeight = 0;
     this.position.copy(spawn);
     this.camera.position.copy(this.position);
     this.yaw = 0;
     this.pitch = 0;
+    this.safeX = spawn.x;
+    this.safeZ = spawn.z;
   }
 
   /** Reset per-run state without re-registering any listeners. */
@@ -414,11 +435,27 @@ export class Player {
     }
     if (canMoveZ) this.position.z = newPos.z;
 
+    // Remember where the player legally stood, so the push-out passes below
+    // always have somewhere safe to fall back to.
+    if (this.isLegalSpot()) {
+      this.safeX = this.position.x;
+      this.safeZ = this.position.z;
+    }
+
     // --- Furniture collision ---------------------------------------------
     this.resolveColliders();
 
     // --- Solid boxes: shut doors ------------------------------------------
     this.resolveBlockers();
+
+    // --- Hard guarantee: never end a frame inside geometry ----------------
+    // Pushing out of one prop can shove the player into a wall behind it, so
+    // if the frame ends anywhere illegal the whole step is undone. That is
+    // what keeps the player from ever standing inside a locker or a door.
+    if (!this.isLegalSpot()) {
+      this.position.x = this.safeX;
+      this.position.z = this.safeZ;
+    }
 
     // --- Crouch height transition ----------------------------------------
     const targetHeight = this.isCrouched ? CROUCH_HEIGHT : EYE_HEIGHT;
@@ -430,11 +467,13 @@ export class Player {
       const bobSpeed = sprinting ? HEAD_BOB_SPEED * 1.45 : HEAD_BOB_SPEED;
       const bobAmount = (sprinting ? HEAD_BOB_AMOUNT * 1.35 : HEAD_BOB_AMOUNT) * (this.isCrouched ? 0.3 : 1);
       this.headBobPhase += dt * bobSpeed;
-      this.position.y = this.currentHeight + Math.sin(this.headBobPhase) * bobAmount;
+      this.position.y =
+        this.groundHeight + this.currentHeight + Math.sin(this.headBobPhase) * bobAmount;
       roll = Math.sin(this.headBobPhase * 0.5) * (sprinting ? 0.035 : 0.02) * (this.isCrouched ? 0.3 : 1);
     } else {
       this.headBobPhase = 0;
-      this.position.y += (this.currentHeight - this.position.y) * Math.min(1, dt * 6);
+      const restingHeight = this.groundHeight + this.currentHeight;
+      this.position.y += (restingHeight - this.position.y) * Math.min(1, dt * 6);
     }
 
     // --- Footsteps --------------------------------------------------------
@@ -484,9 +523,9 @@ export class Player {
       else nextZ = maxZ;
 
       // Never accept a push that would put the player inside real geometry.
-      if (isWalkable(this.grid, nextX, z)) this.position.x = nextX;
-      else if (isWalkable(this.grid, x, nextZ)) this.position.z = nextZ;
-      else if (isWalkable(this.grid, nextX, nextZ)) {
+      if (this.canStandAt(nextX, z)) this.position.x = nextX;
+      else if (this.canStandAt(x, nextZ)) this.position.z = nextZ;
+      else if (this.canStandAt(nextX, nextZ)) {
         this.position.x = nextX;
         this.position.z = nextZ;
       }
@@ -516,10 +555,101 @@ export class Player {
       const nextX = this.position.x + dx * push;
       const nextZ = this.position.z + dz * push;
 
-      // Never let the push shove the player into a wall
-      if (isWalkable(this.grid, nextX, this.position.z)) this.position.x = nextX;
-      if (isWalkable(this.grid, this.position.x, nextZ)) this.position.z = nextZ;
+      // Never let the push shove the player into a wall. Anything that slips
+      // through here is caught by the end-of-frame backstop in update().
+      if (this.canStandAt(nextX, this.position.z)) this.position.x = nextX;
+      if (this.canStandAt(this.position.x, nextZ)) this.position.z = nextZ;
     }
+  }
+
+  /**
+   * True when the player's whole body fits at (x, z): the centre cell plus the
+   * four cells its radius reaches into are all walkable.
+   *
+   * Movement already tested this footprint, but the push-out passes only ever
+   * tested the centre - which is how a shove from a gurney used to leave the
+   * player half-buried in the wall behind it.
+   */
+  private canStandAt(x: number, z: number): boolean {
+    return (
+      isWalkable(this.grid, x, z) &&
+      isWalkable(this.grid, x + PLAYER_RADIUS, z) &&
+      isWalkable(this.grid, x - PLAYER_RADIUS, z) &&
+      isWalkable(this.grid, x, z + PLAYER_RADIUS) &&
+      isWalkable(this.grid, x, z - PLAYER_RADIUS)
+    );
+  }
+
+  /**
+   * True when the player's whole body fits at (x, z) with nothing overlapping
+   * it: every cell the radius reaches into is walkable, and no prop or shut
+   * door covers the spot.
+   */
+  private legalAt(x: number, z: number): boolean {
+    const skin = 0.001;
+    if (!this.canStandAt(x, z)) return false;
+    for (const c of this.colliders) {
+      const dx = x - c.x;
+      const dz = z - c.z;
+      const min = c.r + PLAYER_RADIUS;
+      if (dx * dx + dz * dz < min * min - skin) return false;
+    }
+    for (const box of this.blockers) {
+      if (
+        x > box.min.x - PLAYER_RADIUS + skin &&
+        x < box.max.x + PLAYER_RADIUS - skin &&
+        z > box.min.z - PLAYER_RADIUS + skin &&
+        z < box.max.z + PLAYER_RADIUS - skin
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** True when the player is standing somewhere a player is allowed to stand. */
+  private isLegalSpot(): boolean {
+    return this.legalAt(this.position.x, this.position.z);
+  }
+
+  /**
+   * Moves the player the shortest distance that puts them somewhere their whole
+   * body fits, and adopts that spot as the fallback the frame-end guarantee
+   * reverts to.
+   *
+   * Used when a run is restored. A checkpoint saved a hair too close to a desk
+   * would fail the guarantee on the very first frame and be flung back to the
+   * level spawn, which reads as the floor teleporting the player across the
+   * building. Deliberately NOT folded into place(): that parks the player
+   * inside a locker on purpose, where overlapping a prop is the whole point.
+   */
+  settle(): void {
+    if (!this.isLegalSpot()) {
+      const fromX = this.position.x;
+      const fromZ = this.position.z;
+      search: for (let radius = 0.25; radius <= 3.5; radius += 0.25) {
+        const steps = Math.max(8, Math.round(radius * 8));
+        for (let i = 0; i < steps; i++) {
+          const angle = (i / steps) * Math.PI * 2;
+          const x = fromX + Math.cos(angle) * radius;
+          const z = fromZ + Math.sin(angle) * radius;
+          if (!this.legalAt(x, z)) continue;
+          this.position.x = x;
+          this.position.z = z;
+          break search;
+        }
+      }
+    }
+
+    // Only adopt the spot as the fallback once the body really fits there. If
+    // nothing nearby is free, the old fallback is left alone so the guarantee
+    // still has somewhere legal to send the player.
+    if (this.isLegalSpot()) {
+      this.safeX = this.position.x;
+      this.safeZ = this.position.z;
+    }
+    this.velocity.set(0, 0, 0);
+    this.applyCamera();
   }
 
   /** Get the direction the player is facing (horizontal) */

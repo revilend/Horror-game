@@ -102,6 +102,11 @@ const UI: Record<string, Localized> = {
     ru: 'Вы — доктор Элиас Рен, последний хирург, подписавший Протокол 7. 4 ноября 1987 года пациентов заперли в одной палате, больницу закрыли, и никто не вышел. Сегодня утром вы проснулись один: двери в цепях, а голоса в коридорах зовут вас знакомым голосом. Он помнит вас. Он ждёт вас. Найдите три ключа, восстановите питание и уйдите через ворота раньше, чем он найдёт вас.',
   },
   'menu.start': { uz: 'BOSHLASH', en: 'START', ru: 'НАЧАТЬ' },
+  'menu.continue': {
+    uz: 'DAVOM ETISH — {time}',
+    en: 'CONTINUE — {time}',
+    ru: 'ПРОДОЛЖИТЬ — {time}',
+  },
   'menu.sensitivity': { uz: 'Sezgirlilik', en: 'Sensitivity', ru: 'Чувствительность' },
   'menu.graphics': { uz: 'Grafika', en: 'Graphics', ru: 'Графика' },
   'menu.sound': { uz: 'Ovoz', en: 'Sound', ru: 'Звук' },
@@ -241,6 +246,11 @@ const UI: Record<string, Localized> = {
   'msg.keyFound': { uz: 'Kalit {keys}/{total} topildi', en: 'Key {keys}/{total} found', ru: 'Найден ключ {keys}/{total}' },
   'msg.cardFound': { uz: 'Darvoza kartasi topildi', en: 'The gate keycard is yours', ru: 'Найдена карта от ворот' },
   'msg.itemTaken': { uz: '{item} olindi — {hint}', en: '{item} taken — {hint}', ru: '{item} получено — {hint}' },
+  'msg.resumed': {
+    uz: "Yurish davom etmoqda — narsalaringiz va vazifalaringiz joyida",
+    en: 'Back on your feet — your kit and your progress are where you left them',
+    ru: 'Вы снова на ногах — вещи и прогресс на месте',
+  },
   'msg.itemUsed': { uz: '{item}: {hint}', en: '{item}: {hint}', ru: '{item}: {hint}' },
   'msg.pried': { uz: 'Mixlar chiqdi — dush xonasi ochildi', en: 'The boards came away — the shower room is open', ru: 'Доски сняты — душевая открыта' },
   'msg.battery': { uz: 'Batareya almashtirildi', en: 'Battery replaced', ru: 'Батарея заменена' },
@@ -315,6 +325,14 @@ const UI: Record<string, Localized> = {
   },
 
   /* ---- items ---- */
+  /* ---- the hotbar: what is in the slot, and what it does ---- */
+  'inv.empty': { uz: "Bo'sh slot", en: 'Empty slot', ru: 'Пустой слот' },
+  'inv.useHint': {
+    uz: 'yana bosib ishlatasiz',
+    en: 'press the slot again to use',
+    ru: 'нажмите слот ещё раз, чтобы использовать',
+  },
+
   'item.key.name': { uz: 'Kalit', en: 'Key', ru: 'Ключ' },
   'item.key.hint': { uz: 'Qabulxonadagi eshik uchun', en: 'For the reception door', ru: 'Для двери в приёмной' },
   'item.card.name': { uz: 'Darvoza kartasi', en: 'Gate keycard', ru: 'Карта от ворот' },

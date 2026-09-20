@@ -41,6 +41,7 @@ import { ROOM_META, type RoomMeta } from './rooms';
 import {
   ELEVATOR_COL,
   ELEVATOR_DECKS,
+  ROOF_Y,
   createElevator,
   type ElevatorHandle,
 } from './Elevator';
@@ -86,6 +87,27 @@ const WALL_THICK = 0.2; // wall slab thickness
 const EYE_HEIGHT = 1.7;
 
 /* =========================================================================
+ * THE ROOFTOP
+ *
+ * Rows 0..7 are the asylum's roof terrace and they are genuinely raised: the
+ * whole band sits at ROOF_Y on top of a solid podium, and row 8 between it
+ * and the courtyard is a solid wall row. Nothing walks up there - the lift
+ * is the only way in or out, which is what makes the roof a place the
+ * player arrives at rather than a corner of the yard with a different name.
+ *
+ * Everything the band contains (scenery, props, notes, lamps, the substation
+ * and the escape gate) is placed at `floorY(row)` rather than at zero, and
+ * the game lifts the player and the creature to the same height when the
+ * cage arrives. `assertFloorsSealed` proves the two bands never touch.
+ * ====================================================================== */
+const ROOF_ROWS = 8;
+
+/** Height of the floor standing on a plan row: the roof band is the raised one. */
+function floorY(row: number): number {
+  return row < ROOF_ROWS ? ROOF_Y : 0;
+}
+
+/* =========================================================================
  * THE COMPOUND
  *
  * 28 columns x 58 rows. The top 15 rows are the grounds the hospital sits in
@@ -118,7 +140,7 @@ const LAYOUT = [
   '#.#ttttt#.#uuuuuu#.#vvvvv#.#',
   '#.###+###.###+####.###+###.#',
   '#..........................#',
-  '#.###+###.###+####.###+###.#',
+  '############################',
   '#.#yyyyy#.#xxxxxx#.#zzzzz#.#',
   '#.#yyyyy#.#xxxxxx#.#zzzzz#.#',
   '#.#yyyyy#.#xxxxxx#.#zzzzz#.#',
@@ -182,6 +204,20 @@ export const OUTDOOR_ROWS = 15;
 const OUTDOOR_END = OUTDOOR_ROWS - 1;
 
 /**
+ * The courtyard's own zone index. It is not a lift deck - the cage has five
+ * stops and one of them is the roof - but it needs a name of its own, or the
+ * HUD calls the yard "ROOF" because the two share the outdoor half of the
+ * plan.
+ */
+export const YARD_ZONE = 5;
+
+const YARD_NAME: Localized = {
+  uz: 'HOVLI',
+  en: 'COURTYARD',
+  ru: 'ДВОР',
+};
+
+/**
  * Which elevator deck a row belongs to: an index into ELEVATOR_DECKS.
  *
  * The asylum is laid out as bands of rows, one band per floor, so the row a
@@ -189,7 +225,8 @@ const OUTDOOR_END = OUTDOOR_ROWS - 1;
  */
 export function floorAt(row: number): number {
   if (row < 0 || row >= ROWS) return -1;
-  if (row < OUTDOOR_ROWS) return 4; // rooftop: the grounds and the escape gate
+  if (row < ROOF_ROWS) return 4; // the raised roof terrace
+  if (row < OUTDOOR_ROWS) return YARD_ZONE; // the ground-level courtyard
   // The wall row between two floors belongs to the floor whose lift cage is
   // recessed into it - 33, 43 and 49 are those three cage rows - because that
   // recess is the only cell in the row anyone can stand in, and standing in
@@ -202,6 +239,7 @@ export function floorAt(row: number): number {
 
 /** Localized name of the deck with that index, for the HUD. */
 export function floorName(floor: number): string {
+  if (floor === YARD_ZONE) return L(YARD_NAME);
   const deck = ELEVATOR_DECKS[floor];
   return deck ? L(deck.name) : '';
 }
@@ -225,6 +263,8 @@ interface WorldFixtures {
   interactables: Interactable[];
   /** Doors held shut by a lock the player has to beat. */
   chainedDoors: DoorChain[];
+  /** Doorways boarded shut until the crowbar turns up. */
+  boardedDoorCells: Array<{ row: number; col: number }>;
 }
 
 /**
@@ -323,26 +363,19 @@ const BREAKER_CELL = { row: 24, col: 25 };
 const GATE_CELL = { row: 0, col: 13 };
 /** Substation: powers the gate motor. */
 const SUBSTATION_CELL = { row: 4, col: 5 };
-/** Guard post: holds the gate keycard. */
-const CARD_CELL = { row: 10, col: 5 };
-
-const KEY_CELLS = [
-  { row: 24, col: 7 }, // OPERATSIYA XONASI
-  { row: 31, col: 8 }, // MORGNIY
-  { row: 31, col: 16 }, // DUSH XONASI - behind the boarded door
-];
 
 /**
  * Desks the player can search.
  *
- * The first three sit exactly on KEY_CELLS: the ward keys are no longer lying
- * on the floor, they are shut in a drawer, so they have to be found by working
- * the desk. The rest hold supplies. `yaw` picks which way the drawer faces.
+ * Each holds ordinary supplies. The ward keys are dealt into two of these
+ * drawers at the start of every run (see RUN SCATTER below), so which desk is
+ * worth working is the thing the player has to find out rather than look up.
+ * `yaw` picks which way the drawer faces.
  */
 const SEARCH_DESK_CELLS: Array<{ row: number; col: number; yaw: number; loot: DrawerLoot }> = [
-  { row: 24, col: 7, yaw: 0, loot: 'key' },
-  { row: 31, col: 8, yaw: Math.PI / 2, loot: 'key' },
-  { row: 31, col: 16, yaw: 0, loot: 'key' },
+  { row: 24, col: 7, yaw: 0, loot: 'bottle' },
+  { row: 31, col: 8, yaw: Math.PI / 2, loot: 'battery' },
+  { row: 31, col: 16, yaw: 0, loot: 'bottle' },
   { row: 23, col: 8, yaw: -Math.PI / 2, loot: 'battery' },
   // Store room 2 and Room 102: inside the room, never in the doorway, so a
   // desk can never narrow an entrance the player has to squeeze through.
@@ -350,6 +383,12 @@ const SEARCH_DESK_CELLS: Array<{ row: number; col: number; yaw: number; loot: Dr
   { row: 52, col: 8, yaw: Math.PI, loot: 'battery' },
   { row: 31, col: 24, yaw: 0, loot: 'bottle' },
 ];
+
+/** Desks the ward keys can be dealt into: the two clinic floors only. */
+const DRAWER_KEY_CELLS = SEARCH_DESK_CELLS.filter((desk) => {
+  const band = floorAt(desk.row);
+  return band === 1 || band === 2;
+}).map((desk) => ({ row: desk.row, col: desk.col }));
 
 /**
  * Steel wardrobes to hide in. Each sits against a corridor wall, `dz`/`dx`
@@ -496,60 +535,12 @@ const PROP_PLAN: PropPlan[] = [
  * unlocked, and buildWorld asserts that after the door is boarded up.
  * ---------------------------------------------------------------------- */
 
-/** Store room, ground floor: the breaker's missing fuse. */
-const FUSE_CELL = { row: 18, col: 23 };
-/** Boiler room: the second cell for the generator panel. */
-const SPARE_FUSE_CELL = { row: 46, col: 8 };
-/** Boiler room, deep basement: pries the boarded door open. */
-const CROWBAR_CELL = { row: 47, col: 3 };
-/** Spare torch cells, scattered where a torch would have been left. */
-const BATTERY_CELLS = [
-  { row: 17, col: 13 }, // first corridor
-  { row: 23, col: 15 }, // X-ray room
-  { row: 37, col: 15 }, // children's ward, second floor
-];
-/** Empty glass vials lying around - throw them to lure the creature away. */
-const VIAL_CELLS = [
-  { row: 18, col: 21 }, // near the store room
-  { row: 20, col: 8 },  // second corridor
-  { row: 24, col: 11 }, // intensive therapy
-  { row: 17, col: 19 }, // X-ray anteroom
-  { row: 31, col: 9 },  // archive
-  { row: 7, col: 14 },  // courtyard, by the parking lot
-];
 /**
  * The shower room's doorways are boarded shut until the crowbar turns up.
- * The room holds one of the three keys, so it is a real gate rather than
- * decoration.
+ * The crowbar is never hidden in here: it is what opens the boards, so a run
+ * that put it inside would be walled off from its own key.
  */
 const JAMMED_ROOM = 'q'; // DUSH XONASI
-
-const NOTE_CELLS = [
-  // Inside
-  { row: 31, col: 7 }, // MORGNIY            1
-  { row: 16, col: 24 }, // OMBORXONA          2
-  { row: 17, col: 18 }, // XONA 202           3
-  { row: 24, col: 10 }, // INTENSIV TERAPIYA  4
-  { row: 23, col: 15 }, // RENTGEN XONASI     5
-  { row: 17, col: 7 }, // TELEFON MARKAZI    6
-  { row: 31, col: 10 }, // ARXIV             7
-  { row: 24, col: 1 }, // KUTUBXONA          8
-  // Outside
-  { row: 4, col: 20 }, // QABRISTON          9
-  { row: 10, col: 22 }, // KREMATORIY        10
-  { row: 10, col: 13 }, // AVTOTURARGOH      11
-  // Second floor & deep basement - the story keeps going down
-  { row: 37, col: 2 }, // BOSH SHIFOKOR XONASI  12
-  { row: 37, col: 7 }, // KIR YUVISH XONASI     13
-  { row: 37, col: 15 }, // BOLALAR PALATASI     14
-  { row: 47, col: 15 }, // LABORATORIYA 7       15
-  { row: 47, col: 2 }, // QOZONXONA            16
-  { row: 47, col: 24 }, // MORGNIY 2            17
-  // Third floor - the last of the story is up here
-  { row: 53, col: 2 }, // IZOLYATOR            18
-  { row: 53, col: 7 }, // ELEKTROTERAPIYA      19
-  { row: 53, col: 15 }, // GIDROTERAPIYA       20
-];
 
 /** Blood scrawls. `face` is the side of the cell the wall is on. */
 /** Lamp posts along the fence line; the substation turns them on. */
@@ -620,6 +611,12 @@ export interface MapInfo {
   interactables: Interactable[];
   /** Doors chained shut: a padlock for the acid, a chain for the cutters. */
   chainedDoors: DoorChain[];
+  /**
+   * Doorways boarded shut until the crowbar turns up. They are walls in the
+   * collision grid, but they are not sealed for good - anything behind them is
+   * reachable once the boards are pried off, which callers need to know.
+   */
+  boardedDoorCells: Array<{ row: number; col: number }>;
   /**
    * The raw ASCII plan, unmodified. The collision grid only distinguishes
    * "wall" from "walkable", so the minimap reads this to tell a corridor from
@@ -866,21 +863,24 @@ function isOpen(grid: number[][], row: number, col: number): boolean {
  * spills into, because one stray doorway is exactly how the building turned
  * back into a single long hallway before.
  *
- * The grounds are exempt, and only they: the reception door lets out into the
- * courtyard, and the run ends at the gate up the yard.
+ * One exemption, and only one: the 1F landing may spill into the courtyard,
+ * because the reception door opens onto it. Every other band - the roof
+ * included - has to be its own island, which is what keeps the rooftop
+ * somewhere the lift takes you rather than a corner of the yard.
  */
 function assertFloorsSealed(grid: number[][]): void {
   for (let index = 0; index < ELEVATOR_DECKS.length; index++) {
     const deck = ELEVATOR_DECKS[index];
-    if (deck.id === 'roof') continue;
 
     const seen = floodFrom(grid, deck.cageRow, ELEVATOR_COL);
     for (let row = 0; row < ROWS; row++) {
       const other = floorAt(row);
-      if (other === index || other === 4) continue;
+      if (other === index) continue;
+      if (other === YARD_ZONE && index === 1) continue;
       for (let col = 0; col < COLS; col++) {
         if (!seen[row * COLS + col]) continue;
-        const name = ELEVATOR_DECKS[other]?.id ?? String(other);
+        const name =
+          other === YARD_ZONE ? 'courtyard' : (ELEVATOR_DECKS[other]?.id ?? String(other));
         throw new Error(`Floor ${deck.id} is still joined to ${name} at (${row},${col})`);
       }
     }
@@ -1056,13 +1056,7 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
     [BREAKER_CELL.row, BREAKER_CELL.col, 'Breaker'],
     [GATE_CELL.row, GATE_CELL.col, 'Main gate'],
     [SUBSTATION_CELL.row, SUBSTATION_CELL.col, 'Substation'],
-    [CARD_CELL.row, CARD_CELL.col, 'Gate keycard'],
-    [FUSE_CELL.row, FUSE_CELL.col, 'Breaker fuse'],
-    [CROWBAR_CELL.row, CROWBAR_CELL.col, 'Crowbar'],
-    ...BATTERY_CELLS.map((cell): [number, number, string] => [cell.row, cell.col, 'Spare battery']),
     ...LAMP_CELLS.map((cell): [number, number, string] => [cell.row, cell.col, 'Lamp post']),
-    ...KEY_CELLS.map((cell, i): [number, number, string] => [cell.row, cell.col, `Key ${i + 1}`]),
-    ...NOTE_CELLS.map((cell, i): [number, number, string] => [cell.row, cell.col, `Note ${i + 1}`]),
     ...WALL_TEXTS.map((d): [number, number, string] => [d.row, d.col, 'Wall scrawl']),
     ...CORPSE_ROOMS.map((entry): [number, number, string] => {
       const index = indexByChar.get(entry.room);
@@ -1076,9 +1070,72 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   placeCell(grid, EXIT_CELL.row, EXIT_CELL.col, CELL_EXIT, 'Exit');
   placeCell(grid, BREAKER_CELL.row, BREAKER_CELL.col, CELL_BREAKER, 'Breaker');
   placeCell(grid, SUBSTATION_CELL.row, SUBSTATION_CELL.col, CELL_SUBSTATION, 'Substation');
-  placeCell(grid, CARD_CELL.row, CARD_CELL.col, CELL_CARD, 'Gate keycard');
-  KEY_CELLS.forEach((cell, i) => placeCell(grid, cell.row, cell.col, CELL_KEY, `Key ${i + 1}`));
-  NOTE_CELLS.forEach((cell, i) => placeCell(grid, cell.row, cell.col, CELL_NOTE, `Note ${i + 1}`));
+
+  // --- Where this run's pickups are hidden --------------------------------
+  // Sampled before the boards go up, so the shower room is still walkable here
+  // and a key can be dealt inside it the way it always was: the boards are
+  // what turn that room into a gate. Nothing can land on a board, because a
+  // board is a doorway and a doorway is never offered as a cell.
+  const spotTaken = new Set<string>();
+  // Fixed fixtures first. Desks, lockers, gurneys and lamp posts are placed at
+  // hand-picked cells of their own, and dressing lands on top of the floor
+  // without asking - so a pickup dealt onto one of those cells would be
+  // swallowed by it. (The ward keys are the exception, and they are dealt in
+  // deliberately: a key in a drawer is the point of a drawer.)
+  for (const cell of [
+    ...SEARCH_DESK_CELLS,
+    ...LOCKER_CELLS,
+    ...HIDING_CELLS,
+    ...LAMP_CELLS,
+    { row: 9, col: 20 }, // the toolshed, where the ambulance's 12V cell sits
+  ]) {
+    spotTaken.add(`${cell.row}:${cell.col}`);
+  }
+  const spots = pickRunSpots(grid, spotTaken);
+  const mark = (cell: Spot, value: number, label: string): Spot => {
+    placeCell(grid, cell.row, cell.col, value, label);
+    spotTaken.add(`${cell.row}:${cell.col}`);
+    return cell;
+  };
+  spots.keys.forEach((cell, index) => mark(cell, CELL_KEY, `Key ${index + 1}`));
+  spots.notes.forEach((cell, index) => mark(cell, CELL_NOTE, `Note ${index + 1}`));
+  mark(spots.card, CELL_CARD, 'Gate keycard');
+
+  // Everything the player has to collect this run, checked in one place: a
+  // sampled cell that no lift landing can walk to would be a dead run, and
+  // this fails the build instead of the player.
+  const critical: Spot[] = [
+    ...spots.keys,
+    ...spots.notes,
+    spots.card,
+    spots.fuse,
+    spots.spareFuse,
+    spots.crowbar,
+    ...spots.batteries,
+    ...spots.vials,
+  ];
+  // A chain is only ever hung where it strands nothing. Notes, ampoules and
+  // spare cells are optional pickups: a run stays winnable without them, and
+  // treating a note in a side room as critical would refuse the padlock and
+  // the chain their doorways half the time.
+  const chainCritical: Spot[] = [
+    ...spots.keys,
+    spots.card,
+    spots.fuse,
+    spots.spareFuse,
+    spots.crowbar,
+  ];
+  assertReachable(
+    grid,
+    critical.map((cell, index): [number, number, string] => [
+      cell.row,
+      cell.col,
+      `Pickup ${index + 1} of ${critical.length}`,
+    ]),
+  );
+
+  /** Doorways boarded shut, kept so callers can tell a gate from a wall. */
+  const boardedDoorCells: Array<{ row: number; col: number }> = [];
 
   // --- Board up the shower room -------------------------------------------
   // Doors are found from the plan rather than hard-coded, so the puzzle keeps
@@ -1087,10 +1144,20 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   if (boardedCells.length === 0) {
     throw new Error(`Room '${JAMMED_ROOM}' has no doorways to board up`);
   }
-  for (const cell of boardedCells) grid[cell.row][cell.col] = 0;
+  for (const cell of boardedCells) {
+    boardedDoorCells.push({ row: cell.row, col: cell.col });
+    grid[cell.row][cell.col] = 0;
+  }
+  // The walls are final from here on, so every pass below leaves the sampled
+  // pickup cells clear.
   // The crowbar has to be reachable *with the door shut*, or the run is
   // unwinnable. Failing loudly here beats shipping a dead end.
-  assertReachable(grid, [[CROWBAR_CELL.row, CROWBAR_CELL.col, 'Crowbar (door boarded up)']]);
+  assertReachable(grid, [[spots.crowbar.row, spots.crowbar.col, 'Crowbar (door boarded up)']]);
+  // ...and the boards themselves have to stay beatable, which means the tool
+  // can never have been dealt into the room it opens.
+  if (LAYOUT[spots.crowbar.row][spots.crowbar.col] === JAMMED_ROOM) {
+    throw new Error('Run scatter: the crowbar was dealt into the room it opens');
+  }
 
   // The niches are cut, so this is the first moment the sealing can be asked
   // whether it actually sealed anything.
@@ -1343,12 +1410,67 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   let tubeCount = 0;
 
   // --- Ground ------------------------------------------------------------
-  const groundGeo = new THREE.PlaneGeometry(COLS * CELL, OUTDOOR_ROWS * CELL);
+  // Only the courtyard half: rows 0..7 are the roof terrace, and its floor is
+  // the top of the podium built just below.
+  const yardRows = OUTDOOR_ROWS - ROOF_ROWS;
+  const groundGeo = new THREE.PlaneGeometry(COLS * CELL, yardRows * CELL);
   const outdoorFloor = new THREE.Mesh(groundGeo, asphaltMat);
   outdoorFloor.rotation.x = -Math.PI / 2;
-  outdoorFloor.position.set((COLS * CELL) / 2 - CELL / 2, 0, (OUTDOOR_ROWS * CELL) / 2 - CELL / 2);
+  outdoorFloor.position.set(
+    (COLS * CELL) / 2 - CELL / 2,
+    0,
+    ((ROOF_ROWS + OUTDOOR_ROWS - 1) / 2) * CELL,
+  );
   outdoorFloor.receiveShadow = true;
   scene.add(outdoorFloor);
+
+  // --- The roof podium and its terrace ------------------------------------
+  // A solid mass under the roof band, built as four slabs with the lift's
+  // shaft left open through the middle, so the cage climbs a real shaft and
+  // the yard sees a storey of building rather than a floating floor.
+  {
+    const half = CELL / 2;
+    const shaft = ELEVATOR_DECKS[ELEVATOR_DECKS.length - 1];
+    const shaftX1 = ELEVATOR_COL * CELL - half;
+    const shaftX2 = ELEVATOR_COL * CELL + half;
+    const shaftZ1 = shaft.cageRow * CELL - half;
+    const shaftZ2 = shaft.cageRow * CELL + half;
+    const west = -half;
+    const east = (COLS - 1) * CELL + half;
+    const north = -half;
+    const south = (ROOF_ROWS - 1) * CELL + half;
+
+    const slabs = [
+      { x1: west, x2: east, z1: north, z2: shaftZ1 },
+      { x1: west, x2: east, z1: shaftZ2, z2: south },
+      { x1: west, x2: shaftX1, z1: shaftZ1, z2: shaftZ2 },
+      { x1: shaftX2, x2: east, z1: shaftZ1, z2: shaftZ2 },
+    ];
+
+    for (const slab of slabs) {
+      const width = slab.x2 - slab.x1;
+      const depth = slab.z2 - slab.z1;
+      if (width <= 0 || depth <= 0) continue;
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, ROOF_Y, depth), outerWallMat);
+      mesh.position.set((slab.x1 + slab.x2) / 2, ROOF_Y / 2, (slab.z1 + slab.z2) / 2);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+    }
+
+    const terrace = new THREE.Mesh(
+      new THREE.PlaneGeometry(COLS * CELL, ROOF_ROWS * CELL),
+      asphaltMat,
+    );
+    terrace.rotation.x = -Math.PI / 2;
+    terrace.position.set(
+      (COLS * CELL) / 2 - CELL / 2,
+      ROOF_Y + 0.01,
+      (ROOF_ROWS * CELL) / 2 - CELL / 2,
+    );
+    terrace.receiveShadow = true;
+    scene.add(terrace);
+  }
 
   // The courtyard itself is packed dirt, not tarmac
   const courtyard = new THREE.Mesh(new THREE.PlaneGeometry(26 * CELL, 2 * CELL), dirtMat);
@@ -1375,6 +1497,7 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   const wallGeoSide = new THREE.BoxGeometry(WALL_THICK, WALL_H, CELL);
   const indoorWallGeometries: THREE.BufferGeometry[] = [];
   const outdoorWallGeometries: THREE.BufferGeometry[] = [];
+  const roofWallGeometries: THREE.BufferGeometry[] = [];
 
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
@@ -1384,7 +1507,12 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
       const cz = row * CELL;
       // A wall is textured after the space it faces: open ground gets the
       // weathered concrete perimeter, indoor cells get the peeling plaster.
-      const bucket = row <= OUTDOOR_END ? outdoorWallGeometries : indoorWallGeometries;
+      const bucket =
+        row < ROOF_ROWS
+          ? roofWallGeometries
+          : row <= OUTDOOR_END
+            ? outdoorWallGeometries
+            : indoorWallGeometries;
 
       const sides = [
         { dr: -1, dc: 0, geo: wallGeo, pos: [cx, WALL_H / 2, cz - CELL / 2 + WALL_THICK / 2] as const },
@@ -1423,6 +1551,9 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   };
   addWallMesh(indoorWallGeometries, wallMat);
   addWallMesh(outdoorWallGeometries, outerWallMat);
+  // The roof band's slabs are the same walls, lifted onto the podium.
+  for (const geometry of roofWallGeometries) geometry.translate(0, ROOF_Y, 0);
+  addWallMesh(roofWallGeometries, outerWallMat);
 
   // --- Fixtures: doors, desk drawers and lockers --------------------------
   // Declared up here because the lift registration below hands all of them to
@@ -1468,6 +1599,7 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
     lockers,
     interactables,
     chainedDoors,
+    boardedDoorCells,
   };
 
   // The cage is solid: the player walks in through the gate and nowhere else.
@@ -1532,10 +1664,10 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   }
 
   // Supplies in the ordinary drawers. The ward keys are not built here: World
-  // still lays them out as floor pickups (KEY_CELLS is validated for
-  // reachability), and the game moves them into the matching drawer and
-  // re-scans the level at start-up. Doing it in one place keeps the two from
-  // ever disagreeing about where a key is.
+  // still lays them out as floor pickups (the run's sampled cells are checked
+  // for reachability above), and the game moves the ones that were dealt into
+  // a drawer into it at start-up, dropping whatever was in there. Doing it in
+  // one place keeps the two from ever disagreeing about where a key is.
   for (const desk of desks) {
     if (desk.lootKind === 'key') continue;
     const loot =
@@ -1582,7 +1714,9 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   // hung, because a prop needs both: the grid to find a cell it can stand in,
   // and the door list to know which cells are passages.
   const propMats = makeInteractableMaterials();
-  const propCells = new Set<string>();
+  // Seeded with the run's pickups: nothing the player has to collect should
+  // end up inside a cabinet or under a bin.
+  const propCells = new Set<string>(spotTaken);
   for (const spec of PROP_PLAN) {
     const cell = nearestPropCell(grid, spec.anchor, propCells, WALL_KINDS.has(spec.kind));
     if (!cell) continue;
@@ -1591,21 +1725,43 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
     const prop = createInteractable(spec.kind, propMats);
     const x = cell.col * CELL;
     const z = cell.row * CELL;
-    placeInteractable(prop, x, z, spec.yaw ?? 0, floorAt(cell.row), spec.loot ?? null, spec.locked ?? false);
+    placeInteractable(
+      prop,
+      x,
+      z,
+      spec.yaw ?? 0,
+      floorAt(cell.row),
+      spec.loot ?? null,
+      spec.locked ?? false,
+      floorY(cell.row),
+    );
     if (WALL_KINDS.has(spec.kind)) mountOnWall(prop, cell, grid, CELL);
     scene.add(prop.group);
     interactables.push(prop);
-    colliders.push({ x, z, r: interactableRadius(prop) });
+    // The collider follows the prop, not the cell it was planned in. A
+    // wall-mounted prop is slid 1.84 m out to its wall by `mountOnWall`, so a
+    // collider left at the cell centre blocked the middle of the room while
+    // the thing actually drawn - a switch, a mirror, a lightbox, a telephone -
+    // stayed walk-through. That is exactly how a player ends up gliding
+    // through solid-looking fixtures.
+    colliders.push({
+      x: prop.group.position.x,
+      z: prop.group.position.z,
+      r: interactableRadius(prop),
+    });
   }
 
   // A twelve-volt battery out in the courtyard: the ambulance's missing cell.
   const shedCell = nearestPropCell(grid, { row: 9, col: 20 }, propCells);
   if (shedCell) {
     propCells.add(`${shedCell.row}:${shedCell.col}`);
+    // Scenery is chosen further down, so the cell the cell *actually* landed
+    // on has to be claimed too, or a bush grows through the battery.
+    spotTaken.add(`${shedCell.row}:${shedCell.col}`);
     const cellBattery = createBatteryMesh(batteryMat, metalMat);
     cellBattery.userData.itemId = 'battery';
     cellBattery.userData.pickupTag = 'shedBattery';
-    cellBattery.position.set(shedCell.col * CELL, 0.35, shedCell.row * CELL);
+    cellBattery.position.set(shedCell.col * CELL, floorY(shedCell.row) + 0.35, shedCell.row * CELL);
     scene.add(cellBattery);
   }
 
@@ -1619,7 +1775,14 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
     { lock: 'padlock' as const, band: 0 },
     { lock: 'chain' as const, band: 3 },
   ]) {
-    const door = pickChainableDoorway(grid, doors, spec.band, chainedDoors);
+    const door = pickChainableDoorway(
+      grid,
+      doors,
+      spec.band,
+      chainedDoors,
+      chainCritical,
+      boardedDoorCells,
+    );
     if (!door) continue;
     const mesh = createDoorChain(metalMat, rustMat, door.vertical, spec.lock);
     mesh.position.set(door.col * CELL, 0, door.row * CELL);
@@ -1644,6 +1807,10 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
 
       const cx = col * CELL;
       const cz = row * CELL;
+
+      // A pickup lives here: leave the cell clear so it can be seen and
+      // reached rather than buried in dumped furniture.
+      if (spotTaken.has(`${row}:${col}`)) continue;
 
       if (isRoomFloor || isCorridor) {
         if (isRoomFloor && Math.random() < 0.55) {
@@ -1708,7 +1875,13 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
 
   // --- The grounds -------------------------------------------------------
   const outdoorMats = { metalMat, rustMat, woodMat, boneMat, stoneMat, glassMat, paintMat, fabricMat, lampMat };
+  // Everything planted in rows 0..7 is roof scenery, so it is built into a
+  // group that carries the terrace's height and is merged with the rest.
+  const roofProps = new THREE.Group();
+  roofProps.position.y = ROOF_Y;
+  props.add(roofProps);
   for (let row = 0; row <= OUTDOOR_END; row++) {
+    const parent = row < ROOF_ROWS ? roofProps : props;
     for (let col = 0; col < COLS; col++) {
       const char = LAYOUT[row][col];
       if (char === '#' || char === '+') continue;
@@ -1716,57 +1889,66 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
 
       const cx = col * CELL;
       const cz = row * CELL;
+      // A pickup lives here: no scenery - gravestones, trees, debris - on top
+      // of it.
+      if (spotTaken.has(`${row}:${col}`)) continue;
       const sides = openSidesAt(grid, row, col);
 
       if (char === 'v') {
         // Graveyard: headstones in rough rows, leaning with age
         const gx = cx + rnd(-1.1, 1.1);
         const gz = cz + rnd(-1.1, 1.1);
-        addGravestone(props, stoneMat, gx, gz);
+        addGravestone(parent, stoneMat, gx, gz);
         colliders.push({ x: gx, z: gz, r: 0.45 });
         if (Math.random() < 0.22) {
           const tx = cx + rnd(-1.4, 1.4);
           const tz = cz + rnd(-1.4, 1.4);
-          addDeadTree(props, woodMat, tx, tz);
+          addDeadTree(parent, woodMat, tx, tz);
           colliders.push({ x: tx, z: tz, r: 0.55 });
         }
       } else if (char === 'x') {
         if (Math.random() < 0.34) {
           const carX = cx + rnd(-0.9, 0.9);
           const carZ = cz + rnd(-0.9, 0.9);
-          addCar(props, outdoorMats, carX, carZ, Math.random() < 0.5);
+          addCar(parent, outdoorMats, carX, carZ, Math.random() < 0.5);
           colliders.push({ x: carX, z: carZ, r: 1.5 });
         }
       } else if (char === 'w' || char === '.') {
-        if (Math.random() < 0.18) addDebris(props, outdoorMats, cx, cz, sides);
+        if (Math.random() < 0.18) addDebris(parent, outdoorMats, cx, cz, sides);
         if (Math.random() < 0.12) {
           const tx = cx + rnd(-1.2, 1.2);
           const tz = cz + rnd(-1.2, 1.2);
-          addDeadTree(props, woodMat, tx, tz);
+          addDeadTree(parent, woodMat, tx, tz);
           colliders.push({ x: tx, z: tz, r: 0.55 });
         }
-        if (Math.random() < 0.08) addBloodDecal(props, bloodMat, cx + rnd(-0.8, 0.8), cz + rnd(-0.8, 0.8));
+        if (Math.random() < 0.08) addBloodDecal(parent, bloodMat, cx + rnd(-0.8, 0.8), cz + rnd(-0.8, 0.8));
       } else if (char === 'u') {
         if (Math.random() < 0.22) {
-          addBarrier(props, outdoorMats, cx, cz);
+          addBarrier(parent, outdoorMats, cx, cz);
           colliders.push({ x: cx, z: cz, r: 1.1 });
         }
       } else if (char === 't' || char === 'z') {
         if (Math.random() < 0.2) {
-          addBarrelProp(props, outdoorMats, cx, cz);
+          addBarrelProp(parent, outdoorMats, cx, cz);
           colliders.push({ x: cx, z: cz, r: 0.5 });
         }
       } else if (char === 'y') {
-        if (Math.random() < 0.3) addDebris(props, outdoorMats, cx, cz, sides);
+        if (Math.random() < 0.3) addDebris(parent, outdoorMats, cx, cz, sides);
       }
 
-      if (Math.random() < 0.1) addBloodDecal(props, bloodMat, cx, cz);
+      if (Math.random() < 0.1) addBloodDecal(parent, bloodMat, cx, cz);
     }
   }
 
   // Lamp posts along the fence, fused off until the substation comes up
   for (const cell of LAMP_CELLS) {
-    addLampPost(props, metalMat, lampMat, cell.col * CELL, cell.row * CELL);
+    addLampPost(
+      cell.row < ROOF_ROWS ? roofProps : props,
+      metalMat,
+      lampMat,
+      cell.col * CELL,
+      cell.row * CELL,
+    );
   }
 
   // --- Hiding spots (gurneys and wheelchairs at fixed strategic positions) ---
@@ -1774,13 +1956,15 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   for (let i = 0; i < HIDING_CELLS.length; i++) {
     const cell = HIDING_CELLS[i];
     if (!isOpen(grid, cell.row, cell.col)) continue;
+    // A gurney is a big prop with a collider: never park one on a pickup.
+    if (spotTaken.has(`${cell.row}:${cell.col}`)) continue;
     const x = cell.col * CELL;
     const z = cell.row * CELL;
     // Alternate between gurney and wheelchair for visual variety
     const hideProp = i % 2 === 0
       ? createGurney(metalMat, fabricMat)
       : createWheelchair(metalMat, rustMat);
-    hideProp.position.set(x, 0, z);
+    hideProp.position.set(x, floorY(cell.row), z);
     hideProp.rotation.y = Math.random() * Math.PI * 2;
     hideProp.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
@@ -1789,7 +1973,7 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
       }
     });
     props.add(hideProp);
-    hidingSpots.push(new THREE.Vector3(x, EYE_HEIGHT, z));
+    hidingSpots.push(new THREE.Vector3(x, floorY(cell.row) + EYE_HEIGHT, z));
     colliders.push({ x, z, r: i % 2 === 0 ? 1.05 : 0.6 });
   }
 
@@ -1861,10 +2045,10 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   // --- Main gate ----------------------------------------------------------
   const gateCx = GATE_CELL.col * CELL;
   const gateCz = GATE_CELL.row * CELL;
-  const gatePosition = new THREE.Vector3(gateCx, EYE_HEIGHT, gateCz);
+  const gatePosition = new THREE.Vector3(gateCx, floorY(GATE_CELL.row) + EYE_HEIGHT, gateCz);
 
   const gateGroup = new THREE.Group();
-  gateGroup.position.set(gateCx, 0, gateCz);
+  gateGroup.position.set(gateCx, floorY(GATE_CELL.row), gateCz);
 
   const gatePostGeo = new THREE.BoxGeometry(0.34, WALL_H + 0.5, 0.34);
   for (const sign of [-1, 1]) {
@@ -1905,14 +2089,18 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
 
   // --- Substation ---------------------------------------------------------
   const substationMesh = createSubstation(breakerMat, leverMat, metalMat, rustMat);
-  substationMesh.position.set(SUBSTATION_CELL.col * CELL, 0, SUBSTATION_CELL.row * CELL);
+  substationMesh.position.set(
+    SUBSTATION_CELL.col * CELL,
+    floorY(SUBSTATION_CELL.row),
+    SUBSTATION_CELL.row * CELL,
+  );
   scene.add(substationMesh);
 
   // --- Keys, card & notes -------------------------------------------------
   const keyPositions: THREE.Vector3[] = [];
-  KEY_CELLS.forEach((cell, index) => {
+  spots.keys.forEach((cell, index) => {
     const key = createKeyMesh(keyMat);
-    key.position.set(cell.col * CELL, 1.1, cell.row * CELL);
+    key.position.set(cell.col * CELL, floorY(cell.row) + 1.1, cell.row * CELL);
     // The index lets the game (and the minimap) know exactly which pickup
     // was taken, since the meshes themselves are removed from the scene.
     key.userData.pickupIndex = index;
@@ -1923,42 +2111,42 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
 
   const cardPositions: THREE.Vector3[] = [];
   const card = createKeycard(cardMat, metalMat);
-  card.position.set(CARD_CELL.col * CELL, 1.15, CARD_CELL.row * CELL);
+  card.position.set(spots.card.col * CELL, floorY(spots.card.row) + 1.15, spots.card.row * CELL);
   card.userData.pickupIndex = 0;
   card.userData.itemId = 'card';
   scene.add(card);
   cardPositions.push(card.position.clone());
 
   const notePositions: THREE.Vector3[] = [];
-  NOTE_CELLS.forEach((cell, index) => {
+  spots.notes.forEach((cell, index) => {
     const sheet = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.56), noteMat);
     sheet.rotation.x = -Math.PI / 2.35;
-    sheet.position.set(cell.col * CELL + 0.3, 0.85, cell.row * CELL - 0.3);
+    sheet.position.set(cell.col * CELL + 0.3, floorY(cell.row) + 0.85, cell.row * CELL - 0.3);
     sheet.userData.isNote = true;
     // Each sheet carries its own story index so the text always matches the
     // physical note, whichever order the player finds them in.
     sheet.userData.noteIndex = index;
     sheet.userData.pickupIndex = index;
     scene.add(sheet);
-    notePositions.push(new THREE.Vector3(cell.col * CELL, 1, cell.row * CELL));
+    notePositions.push(new THREE.Vector3(cell.col * CELL, floorY(cell.row) + 1, cell.row * CELL));
   });
 
   // --- Puzzle items -------------------------------------------------------
   const spawnItem = (id: string, cell: { row: number; col: number }, mesh: THREE.Object3D, y = 0.95): void => {
-    mesh.position.set(cell.col * CELL, y, cell.row * CELL);
+    mesh.position.set(cell.col * CELL, floorY(cell.row) + y, cell.row * CELL);
     mesh.userData.itemId = id;
     scene.add(mesh);
   };
 
-  spawnItem('fuse', FUSE_CELL, createFuseMesh(fuseMat, glassMat, metalMat));
-  spawnItem('fuse', SPARE_FUSE_CELL, createFuseMesh(fuseMat, glassMat, metalMat));
-  spawnItem('crowbar', CROWBAR_CELL, createCrowbarMesh(crowbarMat), 0.9);
-  for (const cell of BATTERY_CELLS) {
+  spawnItem('fuse', spots.fuse, createFuseMesh(fuseMat, glassMat, metalMat));
+  spawnItem('fuse', spots.spareFuse, createFuseMesh(fuseMat, glassMat, metalMat));
+  spawnItem('crowbar', spots.crowbar, createCrowbarMesh(crowbarMat), 0.9);
+  for (const cell of spots.batteries) {
     spawnItem('battery', cell, createBatteryMesh(batteryMat, metalMat), 0.9);
   }
   // Empty medicine vials: throw one to shatter it somewhere far away and the
   // creature goes to investigate the noise instead of you.
-  VIAL_CELLS.forEach((cell, index) => {
+  spots.vials.forEach((cell, index) => {
     const vial = createVialMesh(glassMat, metalMat);
     vial.rotation.y = index * 1.3;
     spawnItem('bottle', cell, vial, 0.9);
@@ -2006,10 +2194,16 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
     gatePosition,
     gateLeaves,
     gateLock,
-    substationPosition: cellToWorld(SUBSTATION_CELL.row, SUBSTATION_CELL.col, 1.2),
+    substationPosition: cellToWorld(
+      SUBSTATION_CELL.row,
+      SUBSTATION_CELL.col,
+      floorY(SUBSTATION_CELL.row) + 1.2,
+    ),
     substationMesh,
     cardPositions,
-    outdoorLampPositions: LAMP_CELLS.map((cell) => cellToWorld(cell.row, cell.col, 4.35)),
+    outdoorLampPositions: LAMP_CELLS.map((cell) =>
+      cellToWorld(cell.row, cell.col, floorY(cell.row) + 4.35),
+    ),
     lampMaterials: [lampMat],
     hidingSpots,
     colliders,
@@ -3008,7 +3202,7 @@ function addWallBracket(
   group.add(bracket);
 }
 
-export { CELL, WALL_H, EYE_HEIGHT };
+export { CELL, WALL_H, EYE_HEIGHT, ROOF_ROWS, floorY };
 
 /* -------------------------------------------------------------------------
  * Interactive prop placement
@@ -3093,12 +3287,215 @@ function mountOnWall(
     // A wall on this side: stand in front of it, facing away from it.
     const x = cell.col * cellSize + dc * -(cellSize / 2 - 0.16);
     const z = cell.row * cellSize + dr * -(cellSize / 2 - 0.16);
-    prop.group.position.set(x, 0, z);
+    // Keep the height the prop was placed at: a switch on the roof terrace
+    // belongs at the terrace's height, not back down on the compound.
+    prop.group.position.set(x, prop.group.position.y, z);
     // Local +z is the face, so the yaw is whatever turns it off the wall.
     prop.group.rotation.y = Math.atan2(-dc, -dr);
     prop.centre.set(x, prop.centre.y, z);
     return;
   }
+}
+
+/* -------------------------------------------------------------------------
+ * RUN SCATTER
+ *
+ * Everything a run needs the player to find - the three ward keys, the gate
+ * keycard, both generator fuses, the crowbar, the spare torch cells, the glass
+ * ampoules and all twenty notes - used to sit at a hand-picked cell. That made
+ * the second run a memory test: walk the same line, work the same drawers,
+ * pick the same key off the same floor. So every run now samples its own cells
+ * from the free floor instead.
+ *
+ * Two rules keep a sampled layout as solvable as the hand-picked one:
+ *
+ *   1. An item only ever lands in the bands its designer put it in. The keys
+ *      can turn up anywhere across the two clinic floors, but never out in the
+ *      courtyard, because the reception door that opens onto the courtyard is
+ *      itself locked until all three keys are in hand - a key out there would
+ *      wall the run off from its own ending. The crowbar is likewise never
+ *      hidden behind the boards it opens.
+ *   2. The sampled cells are handed to `pickChainableDoorway` as critical, so
+ *      a chain can never be hung across the only way to one of them.
+ *
+ * The cells themselves come from the grid, which only ever offers floor the
+ * builder has already proven walkable: never a wall, never a doorway the
+ * player would have to plug, never the mouth of a lift cage.
+ * ---------------------------------------------------------------------- */
+
+/** One cell on the plan. */
+interface Spot {
+  row: number;
+  col: number;
+}
+
+/**
+ * How one kind of item is scattered: `count` cells drawn from the free floor
+ * of `bands`, never twice.
+ */
+interface SpotRule {
+  count: number;
+  bands: number[];
+  /** Cells this item must never use, however tempting they look. */
+  avoid?: (row: number, col: number) => boolean;
+}
+
+/** What one run's scatter amounts to. Everything the game counts is in here. */
+interface RunSpots {
+  /** Two dealt into drawers, one loose on the ward floor. */
+  keys: Spot[];
+  notes: Spot[];
+  card: Spot;
+  fuse: Spot;
+  spareFuse: Spot;
+  crowbar: Spot;
+  batteries: Spot[];
+  vials: Spot[];
+}
+
+/** Ward keys per run. Kept in step with TOTAL_KEYS in Game. */
+const RUN_KEYS = 3;
+/** Notes per run. Kept in step with TOTAL_NOTES in Game. */
+const RUN_NOTES = 20;
+const RUN_BATTERIES = 3;
+const RUN_VIALS = 6;
+
+/** Ampoules indoors, and one out on the terrace within reach of the lift. */
+const VIAL_INDOOR_RULE: SpotRule = { count: RUN_VIALS - 1, bands: [1, 2] };
+const VIAL_ROOF_RULE: SpotRule = { count: 1, bands: [4] };
+const BATTERY_RULE: SpotRule = { count: RUN_BATTERIES, bands: [1, 2] };
+/** Both generator fuses have to be findable indoors: nothing lights up until
+ *  they are both seated, so neither can be behind the power they restore. */
+const FUSE_RULE: SpotRule = { count: 1, bands: [1, 2] };
+const SPARE_FUSE_RULE: SpotRule = { count: 1, bands: [0, 1, 2] };
+const CROWBAR_RULE: SpotRule = {
+  count: 1,
+  bands: [0, 1, 2],
+  avoid: (row, col) => LAYOUT[row][col] === JAMMED_ROOM,
+};
+/** The guard post and the car park are out in the courtyard. */
+const CARD_RULE: SpotRule = { count: 1, bands: [5] };
+/** Notes are the story, so they go everywhere the player can walk. */
+const NOTE_RULE: SpotRule = { count: RUN_NOTES, bands: [0, 1, 2, 3, 4, 5] };
+/** The one key that is not in a drawer, when the drawers already cover both
+ *  clinic floors, is dropped loose in either of them. */
+const LOOSE_KEY_RULE: SpotRule = { count: 1, bands: [1, 2] };
+
+/**
+ * Every free floor cell in a band: open, not a doorway, not a lift mouth, and
+ * not already claimed by something placed by hand.
+ */
+function bandFloorCells(grid: number[][], band: number): Spot[] {
+  const cells: Spot[] = [];
+  for (let row = 0; row < ROWS; row++) {
+    if (floorAt(row) !== band) continue;
+    for (let col = 0; col < COLS; col++) {
+      // 0 is wall; the 2..9 markers are hand-placed entities (the exit, the
+      // breaker, the lift shafts). Only plain floor is up for grabs.
+      if (grid[row][col] !== 1) continue;
+      // A doorway is a corridor the whole floor funnels through, so nothing
+      // the player has to stand in belongs there.
+      if (LAYOUT[row][col] === '+') continue;
+      let inCage = false;
+      for (const deck of ELEVATOR_DECKS) {
+        if (Math.abs(row - deck.cageRow) <= 1 && Math.abs(col - ELEVATOR_COL) <= 1) inCage = true;
+      }
+      if (inCage) continue;
+      cells.push({ row, col });
+    }
+  }
+  return cells;
+}
+
+/** In-place Fisher-Yates, on the one RNG the whole level already runs on. */
+function shuffle<T>(items: T[]): T[] {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const swap = items[i];
+    items[i] = items[j];
+    items[j] = swap;
+  }
+  return items;
+}
+
+/** Draws up to `rule.count` fresh cells, never reusing one another item took. */
+function sampleSpots(floors: Map<number, Spot[]>, rule: SpotRule, taken: Set<string>): Spot[] {
+  const pool: Spot[] = [];
+  for (const band of rule.bands) pool.push(...(floors.get(band) ?? []));
+
+  const chosen: Spot[] = [];
+  for (const cell of shuffle(pool)) {
+    if (chosen.length >= rule.count) break;
+    const key = `${cell.row}:${cell.col}`;
+    if (taken.has(key)) continue;
+    if (rule.avoid?.(cell.row, cell.col)) continue;
+    taken.add(key);
+    chosen.push(cell);
+  }
+  return chosen;
+}
+
+/**
+ * Draws this run's hiding places. Called before the props, the clutter and the
+ * hiding spots are dressed in, so nothing ever ends up standing on a pickup.
+ */
+function pickRunSpots(grid: number[][], taken: Set<string>): RunSpots {
+  const floors = new Map<number, Spot[]>();
+  const bands = new Set<number>();
+  for (const rule of [
+    LOOSE_KEY_RULE,
+    NOTE_RULE,
+    CARD_RULE,
+    FUSE_RULE,
+    SPARE_FUSE_RULE,
+    CROWBAR_RULE,
+    BATTERY_RULE,
+    VIAL_INDOOR_RULE,
+    VIAL_ROOF_RULE,
+  ]) {
+    for (const band of rule.bands) bands.add(band);
+  }
+  for (const band of bands) floors.set(band, bandFloorCells(grid, band));
+
+  // Half the ward keys are dealt into drawers the player has to work, drawn
+  // before anything else so the desks are never already spoken for.
+  const drawers = shuffle(DRAWER_KEY_CELLS.filter((cell) => grid[cell.row][cell.col] === 1));
+  const keys: Spot[] = [];
+  for (const cell of drawers.slice(0, RUN_KEYS - 1)) {
+    keys.push(cell);
+    taken.add(`${cell.row}:${cell.col}`);
+  }
+
+  // The loose key is dropped on whichever clinic floor the drawers missed, so
+  // a run always has the player searching both of them.
+  const missing = LOOSE_KEY_RULE.bands.filter(
+    (band) => !keys.some((cell) => floorAt(cell.row) === band),
+  );
+  const loose = sampleSpots(
+    floors,
+    missing.length > 0 ? { count: 1, bands: missing } : LOOSE_KEY_RULE,
+    taken,
+  );
+  keys.push(...loose);
+
+  const notes = sampleSpots(floors, NOTE_RULE, taken);
+  const card = sampleSpots(floors, CARD_RULE, taken)[0];
+  const fuse = sampleSpots(floors, FUSE_RULE, taken)[0];
+  const spareFuse = sampleSpots(floors, SPARE_FUSE_RULE, taken)[0];
+  const crowbar = sampleSpots(floors, CROWBAR_RULE, taken)[0];
+  const batteries = sampleSpots(floors, BATTERY_RULE, taken);
+  const vials = [
+    ...sampleSpots(floors, VIAL_ROOF_RULE, taken),
+    ...sampleSpots(floors, VIAL_INDOOR_RULE, taken),
+  ];
+
+  if (keys.length < RUN_KEYS) throw new Error('Run scatter: too little open floor for the ward keys');
+  if (notes.length < RUN_NOTES) throw new Error('Run scatter: too little open floor for the notes');
+  if (!card || !fuse || !spareFuse || !crowbar) {
+    throw new Error('Run scatter: too little open floor for the keycard or the tool pickups');
+  }
+
+  return { keys, notes, card, fuse, spareFuse, crowbar, batteries, vials };
 }
 
 /**
@@ -3116,17 +3513,15 @@ function pickChainableDoorway(
   doors: DoorFixture[],
   band: number,
   taken: DoorChain[],
+  critical: Spot[],
+  boarded: Array<{ row: number; col: number }>,
 ): DoorFixture | null {
   const anchors: Array<{ row: number; col: number }> = [
-    CROWBAR_CELL,
-    FUSE_CELL,
-    SPARE_FUSE_CELL,
     BREAKER_CELL,
-    CARD_CELL,
     SUBSTATION_CELL,
     PLAYER_SPAWN,
     MONSTER_SPAWN,
-    ...KEY_CELLS,
+    ...critical,
   ];
   for (const deck of ELEVATOR_DECKS) anchors.push({ row: deck.cageRow, col: ELEVATOR_COL });
 
@@ -3137,7 +3532,20 @@ function pickChainableDoorway(
       continue;
     }
     const blocked = `${door.row}:${door.col}`;
-    const seen = floodCells(grid, PLAYER_SPAWN.row, PLAYER_SPAWN.col, blocked);
+    // The boards are a gate, not a wall. Walk through them for this check, or
+    // anything behind them - a ward key dealt into the shower room, say -
+    // would rule out every doorway on every floor and no chain would ever be
+    // hung at all.
+    const walkGrid = boarded.length === 0 ? grid : grid.map((row) => [...row]);
+    for (const cell of boarded) walkGrid[cell.row][cell.col] = 1;
+
+    // Every landing, not just the one the player wakes up on: the floors are
+    // sealed islands, so a flood from the lobby alone can never see the
+    // basement, the wards or the roof, and the chain would never be hung.
+    const seen = new Set<number>();
+    for (const deck of ELEVATOR_DECKS) {
+      for (const cell of floodCells(walkGrid, deck.cageRow, ELEVATOR_COL, blocked)) seen.add(cell);
+    }
     const reachable = anchors.every((cell) => seen.has(cell.row * COLS + cell.col));
     if (reachable) return door;
   }

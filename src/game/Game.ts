@@ -11,6 +11,7 @@ import {
   roomIndexAt,
   floorAt,
   floorName,
+  floorY,
 } from './World';
 import {
   ELEVATOR_DECKS,
@@ -22,6 +23,7 @@ import {
   advanceDoor,
   advanceDrawer,
   advanceLocker,
+  matchKeysToDesks,
   type DoorChain,
   type DoorFixture,
   type DrawerFixture,
@@ -40,7 +42,14 @@ import { Monster } from './Monster';
 import { HorrorEffects } from './HorrorEffects';
 import { HorrorAudio } from './Audio';
 import { createJumpscareFaceDataUrl } from './Textures';
-import { Inventory, ItemId } from './Inventory';
+import { Inventory, ItemId, slotIndexFromCode } from './Inventory';
+import {
+  CHECKPOINT_INTERVAL,
+  clearCheckpoint,
+  loadCheckpoint,
+  saveCheckpoint,
+  type RunSnapshot,
+} from './Checkpoint';
 import { Minimap, MinimapState } from './Minimap';
 import {
   applyTranslations,
@@ -252,6 +261,11 @@ export class Game {
   private minimap: Minimap | null = null;
   /** Which pickup of each type has already been taken, by map index. */
   private readonly keyTaken = new Set<number>();
+  /** A saved run the player asked to continue, applied once the intro ends. */
+  private pendingResume: RunSnapshot | null = null;
+  /** Seconds of play since the last checkpoint write. */
+  private checkpointTimer = 0;
+  private continueButton: HTMLButtonElement | null = null;
   private readonly noteTaken = new Set<number>();
   private readonly cardTaken = new Set<number>();
   private readonly minimapState: MinimapState = {
@@ -370,6 +384,7 @@ export class Game {
     this.installLiftUI();
     this.installFixtures();
     this.installAudioUnlock();
+    this.installHardwareBack();
 
     this.setLoadingProgress(8, t('loading.1'));
     await this.yieldToBrowser();
@@ -480,7 +495,8 @@ export class Game {
     this.interactPrompt = id('interact-prompt');
     this.interactLabel = id('interact-label');
     this.handButton = id('hand-btn') as HTMLButtonElement | null;
-    this.inventory = new Inventory(id('inventory'));
+    this.continueButton = id('continue-btn') as HTMLButtonElement | null;
+    this.inventory = new Inventory(id('inventory'), 8, id('inv-readout'));
     this.inventory.onUse = (item) => this.useItem(item);
     this.gameoverScreen = id('gameover-screen');
     this.winScreen = id('win-screen');
@@ -683,6 +699,9 @@ export class Game {
 
   private setupEvents(): void {
     document.getElementById('start-btn')?.addEventListener('click', () => void this.startGame());
+    document
+      .getElementById('continue-btn')
+      ?.addEventListener('click', () => void this.startGame(true));
     document.getElementById('retry-btn')?.addEventListener('click', () => this.restartGame());
     document.getElementById('replay-btn')?.addEventListener('click', () => this.restartGame());
     document.getElementById('pause-btn')?.addEventListener('click', () => this.pauseGame());
@@ -744,6 +763,11 @@ export class Game {
     if (event.code === 'KeyM' && this.state === 'playing') this.minimap?.toggle();
     if (event.code === 'KeyE' && this.state === 'playing') this.interact();
     if (event.code === 'KeyB' && this.state === 'playing') this.throwBestGlass();
+    // Hotbar: 1-8 selects a slot, and the same key again uses a usable item.
+    // The item is fully in the player's hands - pulling up a bottle is a
+    // second deliberate press, not something they discover by losing a chase.
+    const slot = slotIndexFromCode(event.code);
+    if (slot !== null && this.state === 'playing' && !event.repeat) this.inventory?.press(slot);
     if (event.code === 'ShiftLeft' && this.state === 'playing') this.player?.setRunning(true);
     if ((event.code === 'ControlLeft' || event.code === 'ControlRight') && this.state === 'playing') this.player?.setCrouching(true);
       if (event.code === 'Escape') {
@@ -1260,9 +1284,14 @@ export class Game {
     this.forceEndIntro('finished');
   }
 
-  private async startGame(): Promise<void> {
+  private async startGame(resume = false): Promise<void> {
     this.startScreen?.classList.add('hidden');
     this.pauseMenu?.classList.add('hidden');
+
+    // A new run throws the old checkpoint away; a resumed one takes it, and
+    // applies it once the intro has finished (see beginPlay).
+    this.pendingResume = resume ? loadCheckpoint() : null;
+    if (!resume) clearCheckpoint();
 
     // Mobile Chrome will only start an AudioContext from inside a real user
     // gesture, and this button press is the one it gets. Creating, resuming
@@ -1312,11 +1341,14 @@ export class Game {
     void this.audio?.unlock().then((live) => {
       if (live) this.audio?.startAmbience();
     });
-    this.elapsed = 0;
+    const resume = this.pendingResume;
+    this.pendingResume = null;
+    this.elapsed = resume ? resume.elapsed : 0;
     this.state = 'playing';
     // Discard the time the menu/intro spent not rendering, or the first frame
     // of gameplay would jump the camera forward by several seconds.
     this.clock.getDelta();
+    if (resume) this.applyRun(resume);
 
     if (this.isTouchDevice()) {
       this.showMessage(t('msg.controlsTouch'), 5000);
@@ -1338,6 +1370,10 @@ export class Game {
 
     this.elapsed += dt;
 
+    // Write the run out every few seconds, so a tab the OS kills costs the
+    // player seconds rather than the whole run.
+    this.checkpointTimer += dt;
+    if (this.checkpointTimer >= CHECKPOINT_INTERVAL) this.writeCheckpoint();
     // Doors first, so the creature is never held up by one, then the rest of
     // the fixtures, which settle before the player moves - that way the boxes
     // they publish are the ones this frame's movement is tested against.
@@ -1367,6 +1403,7 @@ export class Game {
     this.checkOutdoors();
     this.updateRoomBanner();
     this.updateElevator(dt);
+    this.updateZone();
     this.updateBattery(dt);
     this.updateDanger(dt);
     this.animatePickups(dt);
@@ -1564,6 +1601,7 @@ export class Game {
     if (this.monster && this.mapInfo) {
       const spawn = this.mapInfo.deckPatrolSpawns[deckIndex];
       if (spawn) {
+        this.monster.setGroundHeight(ELEVATOR_DECKS[deckIndex]?.height ?? 0);
         this.monster.reset(spawn);
         window.setTimeout(() => this.showMessage(t('lift.followed'), 3200), 2300);
       }
@@ -1609,12 +1647,9 @@ export class Game {
       this.useFixture();
     });
 
-    window.addEventListener('keydown', (event) => {
-      if (event.code !== 'KeyF' || event.repeat) return;
-      if (!this.fixtureTarget) return;
-      event.preventDefault();
-      this.useFixture();
-    });
+    // The key itself lives in the main key handler, as the fallback half of
+    // interact(): E works whatever is in reach, and F stays the flashlight.
+    // Tapping the prompt still works the fixture directly.
 
     // The hand button works fixtures as well as pickups. It is registered
     // after the reach-out handler and bails out when a pickup is in range, so
@@ -1709,18 +1744,21 @@ export class Game {
     });
 
     const scratch = new THREE.Vector3();
-    for (const key of loose) {
+    const positions = loose.map((key) => {
       key.getWorldPosition(scratch);
+      return { x: scratch.x, z: scratch.z };
+    });
+    const desks = this.desks.map((desk) => ({ x: desk.centre.x, z: desk.centre.z }));
+    const placed = matchKeysToDesks(positions, desks);
 
-      let best: DrawerFixture | null = null;
-      let bestDistance = 3.2;
-      for (const desk of this.desks) {
-        const distance = Math.hypot(desk.centre.x - scratch.x, desk.centre.z - scratch.z);
-        if (distance >= bestDistance) continue;
-        bestDistance = distance;
-        best = desk;
-      }
-      if (!best) continue;
+    for (let i = 0; i < loose.length; i++) {
+      const key = loose[i];
+      const deskIndex = placed[i].desk;
+      // No drawer within reach, or the nearest one is already holding a key:
+      // the key stays exactly where it fell. The run needs all three, so a key
+      // must never be quietly swallowed by an occupied drawer.
+      if (deskIndex === null) continue;
+      const best = this.desks[deskIndex];
 
       const index = typeof key.userData.pickupIndex === 'number' ? key.userData.pickupIndex : -1;
       key.parent?.remove(key);
@@ -1731,6 +1769,13 @@ export class Game {
       key.userData.isDrawerLoot = true;
       key.position.set(0, 0.6, 0.05);
       key.rotation.set(0, 0, Math.PI / 2);
+
+      // The drawer may already hold a spare cell or an ampoule. The key is
+      // what this drawer is for now, so the ordinary loot goes.
+      if (best.loot) {
+        best.loot.parent?.remove(best.loot);
+        best.loot = null;
+      }
 
       best.drawer.add(key);
       best.loot = key;
@@ -2397,6 +2442,7 @@ export class Game {
   private pauseGame(): void {
     if (this.state !== 'playing') return;
     this.state = 'paused';
+    this.writeCheckpoint();
     cancelAnimationFrame(this.animationId);
     this.player?.setRunning(false);
     this.audio?.suspend();
@@ -2455,6 +2501,275 @@ export class Game {
     }
 
     void this.startGame();
+  }
+
+  /* --- Checkpoints: surviving the phone ------------------------------------ */
+
+  /** Everything a resumed run needs, as plain data (see Checkpoint.ts). */
+  private snapshotRun(): RunSnapshot | null {
+    if (!this.player || !this.mapInfo || !this.inventory) return null;
+    return {
+      v: 2,
+      savedAt: Date.now(),
+      floor: this.currentFloor,
+      x: this.player.position.x,
+      z: this.player.position.z,
+      yaw: this.player.facing,
+      elapsed: this.elapsed,
+      health: this.health,
+      flashlightBattery: this.flashlightBattery,
+      flashlightOn: this.flashlightOn,
+      keysCollected: this.keysCollected,
+      cardCollected: this.cardCollected,
+      notesCollected: this.notesCollected,
+      keyTaken: [...this.keyTaken],
+      cardTaken: [...this.cardTaken],
+      noteTaken: [...this.noteTaken],
+      // A desk counts as emptied once its drawer is open and the loot is gone.
+      deskLoot: this.desks
+        .filter((desk) => desk.opened && !desk.loot)
+        .map((desk) => `${desk.row}:${desk.col}`),
+      boardedPried: this.boardedDoors.length === 0,
+      powerOn: this.powerOn,
+      substationOn: this.substationOn,
+      fusesSeated: this.fusesSeated,
+      questFlags: { ...this.questFlags },
+      inventory: this.inventory.snapshot(),
+    };
+  }
+
+  private writeCheckpoint(): void {
+    if (this.state !== 'playing') return;
+    this.checkpointTimer = 0;
+    const snapshot = this.snapshotRun();
+    if (snapshot) saveCheckpoint(snapshot);
+  }
+
+  /**
+   * Puts a saved run back on the board.
+   *
+   * The order matters: the consumables and the one-way gates are restored
+   * first, then the props that are driven by the resulting flags. Every prop
+   * animates from plain fields - `open`, `turns`, `on`, `loot`, `spent` - so
+   * setting those is all it takes for the world to look right as well as
+   * behave right.
+   */
+  private applyRun(run: RunSnapshot): void {
+    const map = this.mapInfo;
+    if (!map || !this.player) return;
+
+    // --- Loot already spent, so nothing can be collected twice --------------
+    const emptied = new Set(run.deskLoot);
+    for (const desk of this.desks) {
+      if (!emptied.has(`${desk.row}:${desk.col}`)) continue;
+      desk.loot?.parent?.remove(desk.loot);
+      desk.loot = null;
+      desk.opened = true;
+      desk.slide = 1;
+      desk.target = 1;
+    }
+
+    for (const pickup of [...this.pickups]) {
+      const index = pickup.object.userData.pickupIndex;
+      const taken =
+        (pickup.kind === 'note' && run.noteTaken.includes(pickup.noteIndex)) ||
+        (typeof index === 'number' &&
+          ((pickup.item === 'key' && run.keyTaken.includes(index)) ||
+            (pickup.item === 'card' && run.cardTaken.includes(index))));
+      if (!taken) continue;
+      const at = this.pickups.indexOf(pickup);
+      if (at >= 0) this.pickups.splice(at, 1);
+      pickup.object.parent?.remove(pickup.object);
+    }
+
+    // --- One-way gates ------------------------------------------------------
+    // A padlock that stays shut after the acid has been spent is a dead end,
+    // not a checkpoint, so a lock that was opened stays open.
+    const broken = new Set<string>();
+    if (run.questFlags.padlock) broken.add('padlock');
+    if (run.questFlags.gateCut) broken.add('chain');
+    for (const chain of this.chains) {
+      if (!broken.has(chain.lock)) continue;
+      chain.beaten = true;
+      chain.mesh.parent?.remove(chain.mesh);
+      chain.door.target = 1;
+      chain.door.swung = true;
+    }
+
+    if (run.boardedPried) {
+      for (const door of this.boardedDoors) {
+        const row = Math.round(door.position.z / CELL);
+        const col = Math.round(door.position.x / CELL);
+        if (map.grid[row]?.[col] === 0) map.grid[row][col] = 1;
+        door.parent?.remove(door);
+      }
+      this.boardedDoors = [];
+    }
+
+    // --- Props the quest flags already describe -----------------------------
+    const looted: Record<string, boolean> = {
+      acid: run.questFlags.acid,
+      boltcutters: run.questFlags.cutters,
+      ignition: run.questFlags.ignition,
+      battery: run.questFlags.battery,
+      bottle: false,
+      vial: false,
+    };
+    let valvesLeft = run.questFlags.valves;
+    for (const prop of this.props) {
+      if (prop.kind === 'valve' && valvesLeft > 0) {
+        // The wheel eases from `turns`, so the leak shuts itself again.
+        prop.turns = 4;
+        valvesLeft--;
+      }
+      if (prop.kind === 'lightbox' && run.questFlags.code) {
+        prop.on = true;
+        prop.uses = 1;
+      }
+      if (prop.kind === 'monitor' && run.questFlags.cctv) {
+        prop.on = true;
+        prop.uses = 1;
+      }
+      if (prop.kind === 'cot' && run.questFlags.lockpick) prop.spent = true;
+      if (prop.kind === 'mirror' && run.questFlags.mirror) prop.uses = 1;
+      if (prop.kind === 'extinguisher' && run.questFlags.extinguisher) prop.spent = true;
+      if (prop.kind === 'van') prop.spent = run.questFlags.escaped;
+
+      if (prop.loot && looted[prop.loot]) {
+        prop.loot = null;
+        prop.spent = true;
+        prop.open = 1;
+        prop.target = 1;
+      }
+    }
+
+    // --- Counters and flags -------------------------------------------------
+    this.questFlags = { ...run.questFlags };
+    this.questIndex = activeQuestIndex(this.questFlags);
+    this.keyTaken.clear();
+    for (const index of run.keyTaken) this.keyTaken.add(index);
+    this.cardTaken.clear();
+    for (const index of run.cardTaken) this.cardTaken.add(index);
+    this.noteTaken.clear();
+    for (const index of run.noteTaken) this.noteTaken.add(index);
+    this.keysCollected = run.keysCollected;
+    this.cardCollected = run.cardCollected;
+    this.notesCollected = run.notesCollected;
+    this.powerOn = run.powerOn;
+    this.substationOn = run.substationOn;
+    this.fusesSeated = run.fusesSeated;
+    this.health = run.health;
+    this.flashlightBattery = run.flashlightBattery;
+    this.flashlightOn = run.flashlightOn;
+    this.inventory?.restore(run.inventory);
+    this.marksDirty = true;
+
+    // --- The HUD, and the world it describes --------------------------------
+    if (this.flashlight) this.flashlight.intensity = this.flashlightOn ? 5.0 : 0;
+    const batteryBar = document.getElementById('battery-bar');
+    if (batteryBar) {
+      batteryBar.style.width = `${this.flashlightBattery}%`;
+      batteryBar.classList.toggle('low', this.flashlightBattery < 25);
+    }
+    for (let i = 1; i <= this.keysCollected; i++) {
+      document.getElementById(`key-${i}`)?.classList.add('collected');
+    }
+    if (this.cardCollected) document.getElementById('card-icon')?.classList.add('collected');
+
+    if (this.powerOn) {
+      this.phase = 'keys';
+      this.effects?.setPower(true);
+      this.monster?.setAggression(1.28);
+      document.getElementById('power-icon')?.classList.add('collected');
+      map.breakerMesh.traverse((child) => {
+        if (child.userData.isBreakerLever) child.rotation.x = 0.6;
+        if (child.userData.isBreakerLamp && child instanceof THREE.Mesh) {
+          const material = child.material;
+          if (material instanceof THREE.MeshStandardMaterial) {
+            material.emissive.set(0x22ff66);
+            material.emissiveIntensity = 2.4;
+          }
+        }
+      });
+    }
+
+    if (this.substationOn) {
+      map.substationMesh.traverse((child) => {
+        if (child.userData.isSubstationLever) child.rotation.x = 0.6;
+        if (child.userData.isSubstationLamp && child instanceof THREE.Mesh) {
+          const material = child.material;
+          if (material instanceof THREE.MeshStandardMaterial) {
+            material.emissive.set(0x22ff66);
+            material.emissiveIntensity = 2.4;
+          }
+        }
+      });
+      for (const material of map.lampMaterials) material.emissiveIntensity = 1.5;
+      this.lightOutdoorLamps();
+      document.getElementById('power-icon')?.classList.add('collected');
+    }
+
+    // --- Where they were standing -------------------------------------------
+    // The courtyard is a zone of its own but not a lift deck, so the cage is
+    // sent to the last deck it can physically be on.
+    this.currentFloor = run.floor;
+    this.elevator?.setDeck(Math.min(run.floor, ELEVATOR_DECKS.length - 1));
+    this.player.setGroundHeight(floorY(run.z / CELL));
+    if (this.liftLocationText) this.liftLocationText.textContent = floorName(run.floor);
+    this.refreshLiftButtons();
+    // place() also levels the camera, so the view resumes on the old heading.
+    this.player.place(run.x, run.z, run.yaw);
+    // A checkpoint saved a hair too close to a desk would fail the frame-end
+    // guarantee on the very first frame and be flung back to the level spawn,
+    // so nudge the player the shortest distance onto clear floor first.
+    this.player.settle();
+    this.refreshMonsterColliders();
+    this.updateObjective();
+    this.updateHUD();
+    this.showMessage(t('msg.resumed'), 4600);
+  }
+
+  /**
+   * Shows the continue button only when there is a run to continue.
+   */
+  private refreshContinueButton(): void {
+    const button = this.continueButton;
+    if (!button) return;
+    const run = loadCheckpoint();
+    button.classList.toggle('hidden', run === null);
+    if (run) {
+      button.textContent = t('menu.continue', { time: this.formatTime(Math.floor(run.elapsed)) });
+    }
+  }
+
+  /**
+   * The hardware back button, and the app switcher.
+   *
+   * Back used to close the page outright, which on a phone reads as the game
+   * crashing. A run in progress pushes a history entry, so back pops that
+   * entry into the pause menu instead, and a fresh entry is pushed so a second
+   * press cannot escape the game either. Backgrounding the tab pauses and
+   * checkpoints, because the OS may not let it come back.
+   */
+  private installHardwareBack(): void {
+    window.addEventListener('popstate', () => {
+      if (this.state !== 'playing') return;
+      this.pauseGame();
+      this.pushRunEntry();
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden || this.state !== 'playing') return;
+      this.pauseGame();
+    });
+  }
+
+  private pushRunEntry(): void {
+    try {
+      history.pushState({ asylum: 'run' }, '');
+    } catch {
+      /* history is unavailable; the pause menu is still reachable with ESC */
+    }
   }
 
   private resetRunState(): void {
@@ -2713,7 +3028,14 @@ export class Game {
   /** Reach out and take, read or use whatever is in front of the player. */
   private interact(): void {
     const target = this.interaction;
-    if (!target) return;
+    if (!target) {
+      // Nothing to pick up, so E is free to work the door, drawer or locker
+      // in reach. That is what frees F: it used to be both the flashlight
+      // and the fixture key, so every door the player opened also toggled
+      // their beam.
+      if (this.fixtureTarget) this.useFixture();
+      return;
+    }
 
     if (target.kind === 'pickup') {
       this.takePickup(target.pickup);
@@ -3032,6 +3354,34 @@ export class Game {
   // --- The grounds ---------------------------------------------------------
 
   /** Swap the soundscape and lighting the moment the player steps outside. */
+  /**
+   * Keeps the player standing on the right floor, and the HUD honest about
+   * where that is.
+   *
+   * The roof terrace is a storey above the compound, so the height under the
+   * player's feet is worked out from the row they are on - and it follows the
+   * cage itself while the lift is moving, so a ride up is ridden rather than
+   * teleported over. The location line subscribes to the same fact, which is
+   * what finally tells the courtyard apart from the roof.
+   */
+  private updateZone(): void {
+    if (!this.player || !this.mapInfo) return;
+
+    const elevator = this.elevator;
+    if (elevator && elevator.isLocked()) {
+      this.player.setGroundHeight(elevator.cage.position.y);
+      return;
+    }
+
+    const row = this.player.position.z / CELL;
+    this.player.setGroundHeight(floorY(row));
+
+    const zone = floorAt(row);
+    if (zone === this.currentFloor) return;
+    this.currentFloor = zone;
+    if (this.liftLocationText) this.liftLocationText.textContent = floorName(zone);
+  }
+
   private checkOutdoors(): void {
     if (!this.player) return;
 
@@ -3482,6 +3832,8 @@ export class Game {
   private onPlayerCaught(): void {
     if (this.state === 'gameover' || this.state === 'win') return;
     this.state = 'gameover';
+    // Dying ends the run, so there is nothing left to continue.
+    clearCheckpoint();
 
     this.audio?.stopAmbience();
     this.audio?.setRaining(false);
@@ -3529,6 +3881,7 @@ export class Game {
   private onWin(): void {
     if (this.state === 'win' || this.state === 'gameover') return;
     this.state = 'win';
+    clearCheckpoint();
     this.setQuestFlag({ escaped: true });
 
     this.audio?.stopAmbience();
@@ -3679,10 +4032,14 @@ export class Game {
   private onLanguageChanged(): void {
     this.refreshLanguageButtons();
     this.updateObjective();
+    this.refreshContinueButton();
 
     // Blood scrawls are baked into canvases, so they are repainted in place
     // rather than rebuilt with the level.
     if (this.mapInfo) relocalizeWallTexts(this.mapInfo);
+
+    // The hotbar readout is painted from translations too.
+    this.inventory?.refresh();
 
     const room = this.mapInfo?.rooms[this.currentRoomIndex];
     if (room) {

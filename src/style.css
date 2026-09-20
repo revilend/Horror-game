@@ -1,4 +1,45 @@
-/* Fonts loaded via <link> in index.html for reliability. Fallbacks defined below. */
+/*
+ * The two display faces are self-hosted, and Vite fingerprints them into
+ * ./assets/ so the relative base still resolves under /Horror-game/.
+ *
+ * They used to come from Google Fonts, which cost a third-party request on
+ * every cold start: it leaked the player's IP to Google, broke the offline
+ * promise the service worker makes, and would have forced a "data collected"
+ * answer on the Play Store data-safety form. Both faces are SIL/OFL licensed,
+ * so shipping the files is the whole fix.
+ */
+@font-face {
+  font-family: 'Creepster';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/creepster-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Special Elite';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/special-elite-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Special Elite';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/special-elite-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
 
 /* ===== BASE ===== */
 * {
@@ -646,6 +687,29 @@ body.in-locker #fixture-prompt .fixture-key {
 }
 
 /* ===== INVENTORY ===== */
+#inv-readout {
+  position: absolute;
+  left: 16px;
+  bottom: 70px;
+  max-width: min(360px, 60vw);
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--bone);
+  background: linear-gradient(180deg, rgba(12, 14, 19, 0.92), rgba(5, 6, 9, 0.88));
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--amber);
+  border-radius: 4px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+#inv-readout.show {
+  opacity: 1;
+}
+
 #inventory {
   position: absolute;
   left: 16px;
@@ -695,6 +759,11 @@ body.in-locker #fixture-prompt .fixture-key {
 .inv-slot.usable:hover {
   border-color: rgba(140, 230, 160, 0.85);
   box-shadow: 0 0 14px rgba(90, 200, 120, 0.35);
+}
+
+.inv-slot.selected {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px var(--amber), 0 0 14px rgba(255, 171, 46, 0.4);
 }
 
 .inv-slot:not(:disabled):active {
@@ -1777,6 +1846,15 @@ body.touch-device .interact-key { display: none; }
     bottom: 10px;
     transform: translateX(-50%);
     gap: 5px;
+  }
+
+  #inv-readout {
+    left: 50%;
+    bottom: 58px;
+    transform: translateX(-50%);
+    max-width: 78vw;
+    font-size: 11px;
+    text-align: center;
   }
 
   .inv-slot {

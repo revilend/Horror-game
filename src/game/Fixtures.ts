@@ -36,6 +36,46 @@ export interface DoorFixture {
   centre: THREE.Vector3;
 }
 
+/**
+ * A loose key waiting to be put away, and a desk that could take it.
+ *
+ * Kept as plain data so the decision can be tested without a scene graph: the
+ * level scatters its three ward keys fresh every run, and a key that no drawer
+ * can hold has to stay on the floor rather than be swallowed by one.
+ */
+export interface KeyPlacement {
+  x: number;
+  z: number;
+}
+
+/**
+ * Matches each loose key to the drawer that will hold it, first come first
+ * served, or to null when no desk is within `reach` - or when the nearest one
+ * already has a key. Two keys in one drawer would hand the player a single
+ * pickup for two of the three they need to leave, so the second key stays
+ * where it fell instead.
+ */
+export function matchKeysToDesks(
+  keys: KeyPlacement[],
+  desks: KeyPlacement[],
+  reach = 3.2,
+): Array<{ key: number; desk: number | null }> {
+  const settled = new Set<number>();
+  return keys.map((key, index) => {
+    let best: number | null = null;
+    let bestDistance = reach;
+    for (let desk = 0; desk < desks.length; desk++) {
+      if (settled.has(desk)) continue;
+      const distance = Math.hypot(desks[desk].x - key.x, desks[desk].z - key.z);
+      if (distance >= bestDistance) continue;
+      bestDistance = distance;
+      best = desk;
+    }
+    if (best !== null) settled.add(best);
+    return { key: index, desk: best };
+  });
+}
+
 export interface DrawerFixture {
   row: number;
   col: number;

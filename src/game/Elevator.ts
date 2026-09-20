@@ -16,6 +16,16 @@ import { L, type Localized } from './i18n';
 /** Column the shaft is cut into, in every band. */
 export const ELEVATOR_COL = 14;
 
+/**
+ * How high the top landing sits above the compound.
+ *
+ * The roof is the one deck that is genuinely above the others: rows 0..7 of
+ * the plan are the terrace, lifted onto a podium, and only the cage goes up
+ * there. Every other deck is at ground level, so this is the lift's own
+ * notion of height rather than something the plan carries.
+ */
+export const ROOF_Y = 10.5;
+
 export interface ElevatorDeck {
   /** Stable id used by the HUD and the touch panel. */
   id: string;
@@ -29,6 +39,8 @@ export interface ElevatorDeck {
   name: Localized;
   /** One-line description under the plate. */
   sub: Localized;
+  /** How far the deck's floor sits above the compound floor. */
+  height: number;
 }
 
 /** Storage order is bottom-up; the panel is wired top-down. */
@@ -40,6 +52,7 @@ export const ELEVATOR_DECKS: ElevatorDeck[] = [
     label: { uz: 'B1', en: 'B1', ru: 'Б1' },
     name: { uz: 'B1 PODVAL', en: 'B1 BASEMENT', ru: 'Б1 ПОДВАЛ' },
     sub: { uz: 'qozonxona va morgniy', en: 'boiler room and morgue', ru: 'котельная и морг' },
+    height: 0,
   },
   {
     id: 'f1',
@@ -48,6 +61,7 @@ export const ELEVATOR_DECKS: ElevatorDeck[] = [
     label: { uz: '1Q', en: '1F', ru: '1Э' },
     name: { uz: '1-QAVAT KLINIKA', en: '1F CLINIC', ru: '1 ЭТАЖ КЛИНИКА' },
     sub: { uz: 'qabulxona va dorixona', en: 'reception and pharmacy', ru: 'приёмная и аптека' },
+    height: 0,
   },
   {
     id: 'f2',
@@ -56,6 +70,7 @@ export const ELEVATOR_DECKS: ElevatorDeck[] = [
     label: { uz: '2Q', en: '2F', ru: '2Э' },
     name: { uz: '2-QAVAT JARROHLIK', en: '2F SURGERY', ru: '2 ЭТАЖ ХИРУРГИЯ' },
     sub: { uz: 'operatsiya va 404-palata', en: 'theatre and room 404', ru: 'операционная и палата 404' },
+    height: 0,
   },
   {
     id: 'f3',
@@ -72,6 +87,7 @@ export const ELEVATOR_DECKS: ElevatorDeck[] = [
       en: 'isolation and electrotherapy',
       ru: 'изолятор и электротерапия',
     },
+    height: 0,
   },
   {
     id: 'roof',
@@ -80,6 +96,7 @@ export const ELEVATOR_DECKS: ElevatorDeck[] = [
     label: { uz: 'VASH', en: 'ROOF', ru: 'КРШ' },
     name: { uz: 'TOM — QOCHISH DARVOZASI', en: 'ROOF — ESCAPE GATE', ru: 'КРЫША — ВОРОТА ПОБЕГА' },
     sub: { uz: "yomg'ir va qochish yo'li", en: 'rain and the way out', ru: 'дождь и путь наружу' },
+    height: ROOF_Y,
   },
 ];
 
@@ -453,7 +470,7 @@ export function createElevator(
 
   decks.forEach((deck) => {
     const arch = new THREE.Group();
-    arch.position.set(cx, 0, deck.cageRow * cell + cell / 2 - 0.02);
+    arch.position.set(cx, deck.height, deck.cageRow * cell + cell / 2 - 0.02);
     scene.add(arch);
 
     for (const sx of [-1, 1]) {
@@ -525,7 +542,7 @@ export function createElevator(
 
     // Dark plate behind the cage so the shaft reads as a closed box.
     const back = new THREE.Mesh(shaftPanelGeo, mats.rust);
-    back.position.set(cx, (CAGE_H + 0.7) / 2, (deck.cageRow - 0.5) * cell + 0.1);
+    back.position.set(cx, (CAGE_H + 0.7) / 2 + deck.height, (deck.cageRow - 0.5) * cell + 0.1);
     back.receiveShadow = true;
     scene.add(back);
   });
@@ -539,7 +556,9 @@ export function createElevator(
   let swapped = false;
   let powered = false;
   let clock = 0;
-  const centre = new THREE.Vector3(cx, 1.55, decks[deck].cageRow * cell);
+  /** The deck a ride started from, so the cage can be climbed from it. */
+  let originDeck = deck;
+  const centre = new THREE.Vector3(cx, 1.55 + decks[deck].height, decks[deck].cageRow * cell);
 
   // `gateFold` is 0 when the gate is wide open and 1 when it is shut. The
   // leaves are hinged on the outer frame and built spanning one span inward,
@@ -575,7 +594,8 @@ export function createElevator(
     deck = index;
     travelTarget = index;
     cage.position.z = decks[index].cageRow * cell;
-    centre.set(cx, 1.55, decks[index].cageRow * cell);
+    cage.position.y = decks[index].height;
+    centre.set(cx, 1.55 + decks[index].height, decks[index].cageRow * cell);
     litLamp(index);
     carPlate.text = decks[index].label;
     carPlate.repaint();
@@ -613,6 +633,7 @@ export function createElevator(
         return false;
       }
       travelTarget = index;
+      originDeck = deck;
       swapped = false;
       timer = 0;
       phase = 'closing';
@@ -652,6 +673,16 @@ export function createElevator(
           hooks.flicker?.(0.08);
           hooks.shake?.(0.34, 0.4);
         }
+
+        // The climb happens across the whole ride, so the roof reads as the
+        // top of a building rather than a room behind another door.
+        const climb = Math.min(1, timer / TRAVEL_TIME);
+        cage.position.y = THREE.MathUtils.lerp(
+          decks[originDeck].height,
+          decks[travelTarget].height,
+          climb,
+        );
+        centre.y = 1.55 + cage.position.y;
 
         const arc = Math.max(0, 1 - Math.abs(timer / TRAVEL_TIME - 0.5) * 2);
         hooks.shake?.(0.06 + arc * 0.1, dt * 2.2);

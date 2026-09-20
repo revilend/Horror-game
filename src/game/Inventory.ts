@@ -122,26 +122,75 @@ export const ITEM_DEFS: Record<ItemId, ItemDef> = {
   },
 };
 
+/**
+ * Maps a key code to a hotbar slot, or null when it is not a slot key.
+ * Both rows are accepted, since a phone keyboard or a numpad should work.
+ */
+export function slotIndexFromCode(code: string): number | null {
+  const match = /^(?:Digit|Numpad)([1-9])$/.exec(code);
+  if (!match) return null;
+  return Number(match[1]) - 1;
+}
+
 export class Inventory {
   private readonly counts = new Map<ItemId, number>();
   private readonly root: HTMLElement | null;
+  private readonly readout: HTMLElement | null;
   private readonly slots: HTMLButtonElement[] = [];
+
+  /** The slot the player last pointed at, and the one the readout describes. */
+  private selected = 0;
 
   /** Raised when the player taps a slot holding a usable item. */
   onUse: ((id: ItemId) => void) | null = null;
 
-  constructor(root: HTMLElement | null, slotCount = 6) {
+  constructor(root: HTMLElement | null, slotCount = 8, readout: HTMLElement | null = null) {
     this.root = root;
+    this.readout = readout;
     if (!this.root) return;
 
     for (let i = 0; i < slotCount; i++) {
       const slot = document.createElement('button');
       slot.type = 'button';
       slot.className = 'inv-slot empty';
-      slot.addEventListener('click', () => this.handleSlotClick(i));
+      slot.addEventListener('click', () => this.press(i));
+      slot.addEventListener('pointerenter', () => this.point(i));
       this.slots.push(slot);
       this.root.appendChild(slot);
     }
+  }
+
+  /**
+   * One press of a hotbar key, or a tap on a slot.
+   *
+   * The first press selects and describes the item; pressing the same slot
+   * again uses it. That order matters on a phone, where the readout is the
+   * only place the player can find out what they are actually carrying.
+   */
+  press(index: number): void {
+    const entry = this.slotContents()[index];
+    const repeat = this.selected === index;
+    this.selected = index;
+    if (!entry) {
+      this.render();
+      return;
+    }
+    if (repeat && ITEM_DEFS[entry.id].usable) {
+      this.onUse?.(entry.id);
+      return;
+    }
+    this.render();
+  }
+
+  /** Describes a slot without using it - the mouse-hover half of press(). */
+  private point(index: number): void {
+    this.selected = index;
+    this.render();
+  }
+
+  /** Re-renders the strip, e.g. after the language changed. */
+  refresh(): void {
+    this.render();
   }
 
   add(id: ItemId, count = 1): void {
@@ -171,6 +220,22 @@ export class Inventory {
 
   clear(): void {
     this.counts.clear();
+    this.render();
+  }
+
+  /** Every held item, as plain data that JSON can carry (see Checkpoint.ts). */
+  snapshot(): Array<[ItemId, number]> {
+    return [...this.counts.entries()].filter(([, held]) => held > 0);
+  }
+
+  /** Puts a saved run's items back, ignoring anything unrecognised. */
+  restore(entries: Array<[ItemId, number]>): void {
+    this.counts.clear();
+    for (const [id, held] of entries ?? []) {
+      if (!ITEM_DEFS[id] || !Number.isFinite(held) || held <= 0) continue;
+      this.counts.set(id, Math.floor(held));
+    }
+    this.selected = 0;
     this.render();
   }
 
@@ -208,11 +273,14 @@ export class Inventory {
     this.slots.forEach((slot, i) => {
       const entry = contents[i];
       slot.className = 'inv-slot';
+      slot.classList.toggle('selected', i === this.selected);
       slot.replaceChildren();
 
       if (!entry) {
         slot.classList.add('empty');
         slot.disabled = true;
+        slot.removeAttribute('title');
+        slot.setAttribute('aria-label', t('inv.empty'));
         return;
       }
 
@@ -241,12 +309,38 @@ export class Inventory {
     });
 
     this.root.classList.toggle('has-items', contents.length > 0);
+    this.renderReadout(contents);
   }
 
-  private handleSlotClick(index: number): void {
-    const entry = this.slotContents()[index];
-    if (!entry) return;
-    if (!ITEM_DEFS[entry.id].usable) return;
-    this.onUse?.(entry.id);
+  /**
+   * The line above the strip: which slot is live and what it will do.
+   *
+   * Without it a slot is just an emoji - the player cannot tell a key they
+   * need from a bottle they can throw, and the hint is where the difference is
+   * actually explained.
+   */
+  private renderReadout(contents: Array<{ id: ItemId; index: number }>): void {
+    if (!this.readout) return;
+
+    const entry = contents[this.selected];
+    if (!entry || contents.length === 0) {
+      this.readout.textContent = '';
+      this.readout.classList.remove('show');
+      return;
+    }
+
+    const def = ITEM_DEFS[entry.id];
+    const held = this.count(entry.id);
+    const parts = [
+      `${this.selected + 1}`,
+      def.icon,
+      def.name,
+      held > 1 ? `\u00d7${held}` : '',
+      '\u2014',
+      def.hint,
+      def.usable ? `\u00b7 ${t('inv.useHint')}` : '',
+    ];
+    this.readout.textContent = parts.filter(Boolean).join(' ');
+    this.readout.classList.add('show');
   }
 }

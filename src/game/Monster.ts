@@ -98,6 +98,17 @@ export class Monster {
    */
   private colliders: Array<{ x: number; z: number; r: number }> = [];
 
+  /**
+   * How high the floor he is walking on sits.
+   *
+   * The roof terrace is a storey up, and he comes over by the lift like
+   * everyone else, so his soles are put down at the same height as the
+   * player's. Left at zero up there he would be ten metres underground, and
+   * every distance the chase rests on - sight, hearing, the catch itself -
+   * would be measured against the wrong place.
+   */
+  private groundHeight = 0;
+
   // Every limb hangs off a pivot placed at its joint. Rotating a limb mesh
   // directly spins it around its own centre, which reads as a twirling stick
   // rather than an arm; pivots are what make the walk cycle look alive.
@@ -114,13 +125,20 @@ export class Monster {
   /** The head-mirror reflector: a real spotlight thrown down the corridor. */
   private mirrorLight: THREE.SpotLight;
 
+  /** Sets the height of the floor he is standing on. */
+  setGroundHeight(height: number): void {
+    this.groundHeight = height;
+    this.position.y = height;
+    if (this.mesh) this.mesh.position.y = height;
+  }
+
   constructor(grid: number[][], spawn: THREE.Vector3) {
     this.grid = grid;
     this.position = spawn.clone();
     // The rig is built with the soles at y = 0, so the doctor stands on the
     // same floor plane the player walks on. Spawn points carry an eye height
     // for other actors, hence the explicit reset.
-    this.position.y = 0;
+    this.position.y = this.groundHeight;
     this.mesh = new THREE.Group();
     this.mesh.name = 'doctorGroup';
 
@@ -523,6 +541,23 @@ export class Monster {
     this.colliders = colliders;
   }
 
+  /**
+   * True when his whole body fits at (x, z), not merely his centre.
+   *
+   * The four sample points are the cardinal edges of his footprint, so a wall
+   * stops him BODY_RADIUS short of it instead of half a body deep inside.
+   */
+  private canStand(x: number, z: number): boolean {
+    const cell = (value: number): number => Math.round(value / CELL);
+    return (
+      isWalkableCell(this.grid, cell(z), cell(x)) &&
+      isWalkableCell(this.grid, cell(z - BODY_RADIUS), cell(x)) &&
+      isWalkableCell(this.grid, cell(z + BODY_RADIUS), cell(x)) &&
+      isWalkableCell(this.grid, cell(z), cell(x - BODY_RADIUS)) &&
+      isWalkableCell(this.grid, cell(z), cell(x + BODY_RADIUS))
+    );
+  }
+
   /** Push the doctor out of any furniture he has ended up inside. */
   private resolveColliders(): void {
     for (const collider of this.colliders) {
@@ -540,12 +575,10 @@ export class Monster {
       const push = (min - dist) / dist;
       const nextX = this.position.x + dx * push;
       const nextZ = this.position.z + dz * push;
-      if (isWalkableCell(this.grid, Math.round(this.position.z / CELL), Math.round(nextX / CELL))) {
-        this.position.x = nextX;
-      }
-      if (isWalkableCell(this.grid, Math.round(nextZ / CELL), Math.round(this.position.x / CELL))) {
-        this.position.z = nextZ;
-      }
+      // Ejecting him out of a gurney must never shove him into the wall behind
+      // it, so both axes go through the same footprint test he walks with.
+      if (this.canStand(nextX, this.position.z)) this.position.x = nextX;
+      if (this.canStand(this.position.x, nextZ)) this.position.z = nextZ;
     }
   }
 
@@ -739,9 +772,21 @@ export class Monster {
       const nextX = this.position.x + nx * speed * dt;
       const nextZ = this.position.z + nz * speed * dt;
 
-      if (isWalkableCell(this.grid, Math.round(nextZ / CELL), Math.round(nextX / CELL))) {
+      // The doctor is a body, not a point. Testing only the cell his centre
+      // lands in let his shoulders and coat sink half a metre into a wall on
+      // every corner he rounded. Sample his own footprint instead, and accept
+      // the two axes separately so he slides along a wall rather than stalling
+      // against it.
+      let advanced = false;
+      if (this.canStand(nextX, this.position.z)) {
         this.position.x = nextX;
+        advanced = true;
+      }
+      if (this.canStand(this.position.x, nextZ)) {
         this.position.z = nextZ;
+        advanced = true;
+      }
+      if (advanced) {
         this.resolveColliders();
       } else {
         // Blocked: force a fresh path next frame
@@ -802,7 +847,7 @@ export class Monster {
 
   reset(spawn: THREE.Vector3): void {
     this.position.copy(spawn);
-    this.position.y = 0;
+    this.position.y = this.groundHeight;
     this.mesh.position.copy(this.position);
     this.state = 'patrol';
     this.path = [];
