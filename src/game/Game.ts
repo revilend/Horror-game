@@ -238,6 +238,7 @@ export class Game {
   private health = MAX_HEALTH;
   private invulnerable = 0;
   private danger = 0;
+  private wasChasing = false;
   private heartbeatTimer = 0;
   private lockedNoticeCooldown = 0;
 
@@ -393,6 +394,7 @@ export class Game {
     this.installRotateGuard();
     this.installLiftUI();
     this.installFixtures();
+    this.installJournal();
     this.installAudioUnlock();
     this.installHardwareBack();
 
@@ -462,7 +464,7 @@ export class Game {
     this.player.setupKeyboard();
     this.player.setupMouseLook();
     this.player.setLookSensitivity(this.settings.sensitivity);
-    this.player.onFootstep = (running) => this.audio?.playFootstep(running ? 0.34 : 0.2);
+    this.player.onFootstep = (running) => this.audio?.playFootstep(running);
 
     this.collectPickups();
 
@@ -474,6 +476,8 @@ export class Game {
     this.refreshMonsterColliders();
     this.monster.onGrowl = () => this.audio?.playGrowl();
     this.monster.onFootstep = () => this.audio?.playDoctorStep();
+    // The saw comes up to speed the frame he commits to the chase.
+    this.monster.onSawRev = () => this.audio?.playSawRev();
 
     if (this.minimapPanel && !this.minimap) this.minimap = new Minimap(this.minimapPanel);
     this.minimap?.attach(this.mapInfo);
@@ -594,8 +598,12 @@ export class Game {
   private applyQuality(): void {
     if (!this.renderer) return;
 
+    // Capped hard on purpose. A phone renderer at devicePixelRatio 3 is drawing
+    // nine times the pixels for a game made of dark corridors, and the card
+    // that pays for it is a thermal throttle ten minutes into a run - which
+    // reads as the game stuttering, not as the phone being hot.
     const dpr = window.devicePixelRatio || 1;
-    const cap = this.settings.quality === 'low' ? 1 : this.settings.quality === 'medium' ? 1.5 : 2;
+    const cap = this.settings.quality === 'low' ? 0.85 : this.settings.quality === 'medium' ? 1.1 : 1.25;
     this.renderer.setPixelRatio(Math.min(dpr, cap));
     this.renderer.shadowMap.enabled = this.settings.quality !== 'low';
     this.effects?.setDustEnabled(this.settings.quality !== 'low');
@@ -667,8 +675,10 @@ export class Game {
 
     const pool: THREE.PointLight[] = [];
     for (let i = 0; i < ROOM_LIGHT_POOL; i++) {
-      // Parked far below the building until a room claims it.
-      pool.push(this.effects.createWallLight(0, -40, 0, 0xfff4e0));
+      // Parked far below the building until a room claims it. The colour is the
+      // sickly yellow-green of a 1987 fluorescent tube: never white, never
+      // comfortable.
+      pool.push(this.effects.createWallLight(0, -40, 0, 0xd8f0a4));
     }
     this.effects.setRoomLightPool(pool);
 
@@ -747,6 +757,75 @@ export class Game {
   }
 
   // --- Events --------------------------------------------------------------
+
+  /**
+   * The patient chart: three tabs and the live objective chain behind them.
+   *
+   * The opening screen is the player's own file rather than a menu page, so
+   * what it has to do is behave like one: turn its pages, show where in
+   * Protocol 7 the run currently stands, and hand control over when the seal
+   * at the foot of the page is broken.
+   */
+  private installJournal(): void {
+    const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.journal-tab'));
+    const panels = Array.from(document.querySelectorAll<HTMLElement>('.journal-panel'));
+
+    for (const tab of tabs) {
+      tab.addEventListener('click', () => {
+        const wanted = tab.dataset.jtab;
+        for (const other of tabs) other.classList.toggle('active', other === tab);
+        for (const panel of panels) {
+          panel.classList.toggle('active', panel.dataset.jpanel === wanted);
+        }
+        // Re-rendered on every visit: a run that has been restarted since the
+        // chart was last opened must show where it stands now, not where it
+        // stood when the page was built.
+        this.renderJournalQuests();
+      });
+    }
+
+    this.renderJournalQuests();
+    // The stage text is translated, so the list is rebuilt with the language.
+    onLanguageChange(() => this.renderJournalQuests());
+  }
+
+  /** The fifteen stages, with everything already done ticked off. */
+  private renderJournalQuests(): void {
+    const list = document.getElementById('journal-quests');
+    if (!list) return;
+
+    const flags = this.questFlags;
+    const active = activeQuestIndex(flags);
+    let done = 0;
+
+    list.replaceChildren();
+    QUEST_STAGES.forEach((stage, index) => {
+      const complete = stage.done(flags);
+      if (complete) done++;
+
+      const item = document.createElement('li');
+      item.className = complete ? 'done' : index === active ? 'active' : 'locked';
+
+      const mark = document.createElement('span');
+      mark.className = 'quest-mark';
+      mark.textContent = complete ? '\u2713' : String(index + 1).padStart(2, '0');
+
+      const label = document.createElement('span');
+      label.className = 'quest-text';
+      label.textContent = L(stage.text);
+
+      item.append(mark, label);
+      list.append(item);
+    });
+
+    const progress = document.getElementById('journal-quest-progress');
+    if (progress) {
+      progress.textContent = t('journal.questProgress', {
+        done,
+        total: QUEST_STAGES.length,
+      });
+    }
+  }
 
   private setupEvents(): void {
     document.getElementById('start-btn')?.addEventListener('click', () => void this.startGame());
@@ -1158,6 +1237,91 @@ export class Game {
     if (reason === 'failsafe' && this.state !== 'playing') this.beginPlay();
   }
 
+  /**
+   * The last beat of the prologue: Dr Aris walks the corridor outside the ward
+   * door, dragging the saw over the tiles.
+   *
+   * He is driven by hand here instead of by his own AI, because a cutscene
+   * wants a mark and a duration: he has to be at one end of the corridor on
+   * the frame the eyes come open and gone again before the player can move.
+   * His head lamp sweeping toward the door is what puts the beam in the room.
+   */
+  private async playArisPass(): Promise<void> {
+    const monster = this.monster;
+    const map = this.mapInfo;
+    if (!monster || !map || !this.camera) return;
+
+    const spawn = map.playerSpawn;
+    const grid = map.grid;
+    const row = Math.round(spawn.z / CELL);
+    const col = Math.round(spawn.x / CELL);
+    const open = (r: number, c: number): boolean =>
+      r > 0 && c > 0 && r < grid.length && c < grid[0].length && grid[r][c] !== 0;
+
+    // Which way the corridor outside the door runs: if the cells three down the
+    // row are open, he walks in z, otherwise across it.
+    const alongZ = open(row - 3, col) || open(row + 3, col);
+    const reach = 3.4;
+    const startX = spawn.x + (alongZ ? 0 : -reach);
+    const startZ = spawn.z + (alongZ ? -reach : 0);
+    const endX = spawn.x + (alongZ ? 0 : reach);
+    const endZ = spawn.z + (alongZ ? reach : 0);
+    const heading = Math.atan2(endX - startX, endZ - startZ) + Math.PI;
+
+    // He is put on the player's storey for the length of the pass, then handed
+    // back to his own spawn at its own height.
+    const originalHeight = monster.currentPosition.y;
+    monster.setGroundHeight(floorY(row));
+    monster.setVisible(true);
+    this.audio?.playDoctorStep();
+
+    const duration = 4200;
+    const started = performance.now();
+    let nextDrag = 220;
+    let nextStep = 620;
+
+    await new Promise<void>((resolve) => {
+      const step = (): void => {
+        this.introAlive();
+        if (this.introFinished) {
+          resolve();
+          return;
+        }
+
+        const elapsed = performance.now() - started;
+        const t = Math.min(1, elapsed / duration);
+        const x = startX + (endX - startX) * t;
+        const z = startZ + (endZ - startZ) * t;
+
+        // Written straight into the rig: his own update() is not running while
+        // the game state is still 'menu'.
+        const position = monster.currentPosition;
+        position.set(x, position.y, z);
+        monster.mesh.position.set(x, position.y, z);
+        // Aimed down the corridor with the lamp drifting toward the doorway and
+        // back out again, so the beam crosses the room rather than the wall.
+        monster.mesh.rotation.y = heading + Math.sin(t * Math.PI) * 0.55;
+
+        if (elapsed >= nextDrag && t < 1) {
+          nextDrag = elapsed + 900;
+          this.audio?.playSawDrag(0.3);
+        }
+        if (elapsed >= nextStep && t < 1) {
+          nextStep = elapsed + 620;
+          this.audio?.playDoctorStep(0.3);
+        }
+
+        if (t < 1) requestAnimationFrame(step);
+        else resolve();
+      };
+      requestAnimationFrame(step);
+    });
+
+    monster.setVisible(false);
+    monster.reset(map.monsterSpawn);
+    monster.setGroundHeight(originalHeight);
+  }
+
   /** Run the full intro cutscene. Resolves when gameplay should start. */
   private async runIntroCutscene(): Promise<void> {
     this.introFinished = false;
@@ -1193,6 +1357,9 @@ export class Game {
     await this.introDelay(600);
     if (this.introFinished) return;
     this.playTapeClick();
+    // The ward monitor under the tape: one clean beep, then the flat line it
+    // is attached to. Nothing else in the building is still powered.
+    this.audio?.playFlatline();
     await this.introDelay(1200);
     if (this.introFinished) return;
 
@@ -1314,6 +1481,13 @@ export class Game {
       requestAnimationFrame(animate);
     });
 
+    this.introAlive();
+    if (this.introFinished) return;
+
+    // ── PHASE 4: HE COMES PAST THE DOOR ──
+    // Upright, torch in hand, and the corridor outside is not empty.
+    this.showMessage(t('intro.drag'), 3600);
+    await this.playArisPass();
     this.introAlive();
     if (this.introFinished) return;
 

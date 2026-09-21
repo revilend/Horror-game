@@ -6,7 +6,11 @@ type MonsterState = 'patrol' | 'investigate' | 'chase';
 
 const SPEED_PATROL = 1.5;
 const SPEED_INVESTIGATE = 2.2;
-const SPEED_CHASE = 3.5;
+/** His chase is a lunge, not a jog: faster than a walk, slower than a sprint. */
+const SPEED_CHASE = 4.05;
+/** Inside this many metres he throws himself at the player. */
+const LUNGE_RANGE = 6;
+const LUNGE_FACTOR = 1.18;
 
 const DETECT_RANGE = 12;
 const HEAR_RUN_RANGE = 9;
@@ -73,6 +77,11 @@ export class Monster {
   onGrowl: (() => void) | null = null;
   /** Fired on each footfall, so the game can click a heel on the tiles. */
   onFootstep: (() => void) | null = null;
+  /**
+   * Fired the moment he commits to a chase, so the game can spin the bone saw
+   * up. Stalking is silent; hunting is not.
+   */
+  onSawRev: (() => void) | null = null;
 
   private grid: number[][];
   private position: THREE.Vector3;
@@ -151,14 +160,16 @@ export class Monster {
       emissive: 0x061410,
       emissiveIntensity: 0.5,
     });
-    // Off-white canvas that has been through a great deal.
+    // A lab coat that was white in 1987. Seven years of dried surgery have
+    // taken it down to a dark, desaturated canvas that reads as grime even
+    // before the torch finds the wet patches on it.
     const coatMat = new THREE.MeshStandardMaterial({
-      color: 0xd7cfbe,
-      roughness: 0.94,
+      color: 0x6f6a5a,
+      roughness: 0.96,
       metalness: 0,
       side: THREE.DoubleSide,
-      emissive: 0x191209,
-      emissiveIntensity: 0.42,
+      emissive: 0x201509,
+      emissiveIntensity: 0.5,
     });
     // Fresh blood and the dark dried stuff it dries into.
     const bloodMat = new THREE.MeshStandardMaterial({
@@ -225,13 +236,21 @@ export class Monster {
       leg.castShadow = true;
       pivot.add(leg);
 
-      // Heavy black leather dress shoe.
-      const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.11, 0.36), shoeMat);
-      shoe.position.set(0, -LEG_LEN + 0.05, -0.07);
+      // Heavy combat boot: a laced shaft over the ankle, a blunt toe and a
+      // lugged sole, so the footfall he is heard by has some weight to it.
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.12, 0.3, 8), shoeMat);
+      shaft.position.set(0, -LEG_LEN + 0.2, 0);
+      shaft.castShadow = true;
+      pivot.add(shaft);
+      const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.12, 0.4), shoeMat);
+      shoe.position.set(0, -LEG_LEN + 0.06, -0.08);
       shoe.castShadow = true;
       pivot.add(shoe);
-      const toecap = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.07, 0.09), shoeMat);
-      toecap.position.set(0, -LEG_LEN + 0.035, -0.24);
+      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.05, 0.42), rustSteelMat);
+      sole.position.set(0, -LEG_LEN + 0.005, -0.08);
+      pivot.add(sole);
+      const toecap = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.09, 0.1), shoeMat);
+      toecap.position.set(0, -LEG_LEN + 0.05, -0.26);
       pivot.add(toecap);
 
       this.legsGroup.add(pivot);
@@ -245,8 +264,9 @@ export class Monster {
     this.torso = new THREE.Group();
     this.torso.name = 'torso';
     this.torso.position.y = WAIST_Y;
-    // Hunched forward, with the shoulders tilted off square by the animation.
-    this.torso.rotation.x = 0.18;
+    // Hunched forward over the saw, with the shoulders tilted off square by
+    // the animation: a predator's lean, not a standing human's.
+    this.torso.rotation.x = 0.26;
     this.mesh.add(this.torso);
 
     // The scrub shirt: the body under the coat, and what shows at the opening.
@@ -268,9 +288,11 @@ export class Monster {
     coat.castShadow = true;
     this.torso.add(coat);
 
+    // Broad enough to fill a doorway: the coat hangs off a frame that is
+    // deliberately wider than the hips.
     const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), coatMat);
     shoulders.position.y = 0.83;
-    shoulders.scale.set(1.34, 0.62, 0.72);
+    shoulders.scale.set(1.5, 0.66, 0.78);
     shoulders.castShadow = true;
     this.torso.add(shoulders);
 
@@ -285,6 +307,18 @@ export class Monster {
       [0.22, 0.48, 0.32, 0.045],
       [-0.2, 0.52, -0.3, 0.06],
       [0.16, -0.05, -0.38, 0.08],
+      // The slick down the front. Whatever else is on the coat, the chest and
+      // the hem over the saw arm are the parts that stay wet.
+      [-0.14, 0.62, 0.3, 0.1],
+      [0.1, 0.66, 0.32, 0.12],
+      [-0.02, 0.72, 0.28, 0.14],
+      [0.34, 0.72, 0.16, 0.07],
+      [-0.38, 0.3, 0.18, 0.08],
+      [0.26, -0.44, 0.26, 0.1],
+      [-0.18, -0.5, 0.22, 0.12],
+      [0.04, -0.58, 0.26, 0.14],
+      [0.3, 0.02, 0.34, 0.07],
+      [-0.42, -0.05, 0.2, 0.06],
     ];
     spatter.forEach(([sx, sy, sz, r], i) => {
       const mark = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 6), i % 3 === 0 ? dryBloodMat : bloodMat);
@@ -692,9 +726,14 @@ export class Monster {
     const canHear = distance < hearRange;
 
     if (canSee) {
-      if (this.state !== 'chase' && this.growlCooldown <= 0) {
-        this.growlCooldown = 7;
-        this.onGrowl?.();
+      if (this.state !== 'chase') {
+        // Eyes on the player: the stalking is over, and the saw comes up to
+        // speed. Growl and rev are separate beats, so one never eats the other.
+        if (this.growlCooldown <= 0) {
+          this.growlCooldown = 7;
+          this.onGrowl?.();
+        }
+        this.onSawRev?.();
       }
       this.state = 'chase';
       this.lastKnown.copy(playerPos);
@@ -735,9 +774,11 @@ export class Monster {
     }
     this.target.y = this.position.y;
 
+    const lunge = this.state === 'chase' && distance < LUNGE_RANGE ? LUNGE_FACTOR : 1;
     const baseSpeed =
       (this.state === 'chase' ? SPEED_CHASE : this.state === 'investigate' ? SPEED_INVESTIGATE : SPEED_PATROL) *
-      this.aggression;
+      this.aggression *
+      lunge;
     // Gentle organic speed variation instead of per-frame random jitter
     const speed = baseSpeed * (1 + Math.sin(this.animPhase * 0.3) * 0.06);
 
@@ -794,7 +835,10 @@ export class Monster {
         this.pathIndex = 0;
       }
 
-      const desired = Math.atan2(nx, nz);
+      // The rig faces -z: the head mirror, the mask, the toes and the saw all
+      // point that way. Without the half turn he moonwalks to the player with
+      // the back of his head leading, which is exactly what it looked like.
+      const desired = Math.atan2(nx, nz) + Math.PI;
       this.mesh.rotation.y = lerpAngle(this.mesh.rotation.y, desired, Math.min(1, dt * 7));
     }
 
@@ -813,7 +857,7 @@ export class Monster {
     // Counter-sway in the hips keeps the walk from looking metronomic, and the
     // forward lean deepens the closer he gets.
     this.torso.rotation.z = Math.sin(this.animPhase * 0.5) * (0.03 + intensity * 0.05);
-    this.torso.rotation.x = 0.18 + intensity * 0.12;
+    this.torso.rotation.x = 0.26 + intensity * 0.14;
 
     // Head: nods on the footfall and lolls to one side as he closes in.
     this.headGroup.position.y = HEAD_Y + bob;
@@ -861,7 +905,7 @@ export class Monster {
     this.animPhase = 0;
     this.strideSign = 0;
     this.mesh.rotation.set(0, 0, 0);
-    this.torso.rotation.set(0.18, 0, 0);
+    this.torso.rotation.set(0.26, 0, 0);
     this.headGroup.rotation.set(0, 0, 0);
     this.leftArmPivot.rotation.set(0, 0, -0.08);
     this.rightArmPivot.rotation.set(ARM_FORWARD, 0, 0.08);

@@ -7,71 +7,125 @@
   <!-- The display faces are self-hosted from src/fonts via @font-face in
        style.css: no third-party request, no leaked IP, and the offline promise
        holds. See the note at the top of that stylesheet. -->
-  <title>Dark Asylum — Protokol 7 | 3D Horror Game</title>
-  <meta name="description" content="3D First-Person Psychological Horror Game built with Three.js. Explore a 7-floor abandoned asylum, hide from the deranged surgeon, solve puzzles, and escape. Fully offline, no ads." />
-  <meta name="keywords" content="horror game, 3D game, psychological horror, asylum, Three.js, offline game, no ads, mobile game" />
-  <meta name="author" content="Dark Asylum Studio" />
+  <title>DR. ARIS: THE MAD SURGEON — 3D First-Person Horror</title>
+  <meta name="description" content="DR. ARIS: THE MAD SURGEON — a 3D first-person psychological horror game. Wake in Patient Room 404 of the abandoned St. Jude asylum, keep your flashlight alive, and escape the surgeon who signs every chart. Fully offline, no ads." />
+  <meta name="keywords" content="horror game, 3D game, first person, psychological horror, asylum, Dr Aris, mad surgeon, Three.js, offline game, no ads, mobile game" />
+  <meta name="author" content="Dr. Aris Studio" />
   <meta name="robots" content="index, follow" />
-  <meta property="og:title" content="Dark Asylum — Protokol 7" />
-  <meta property="og:description" content="3D First-Person Psychological Horror Game. Explore a 7-floor abandoned asylum with 49 rooms, hide from the deranged surgeon, and escape." />
+  <meta property="og:title" content="DR. ARIS: THE MAD SURGEON" />
+  <meta property="og:description" content="A 3D first-person psychological horror game set in St. Jude asylum. Patient 404 is awake, and the surgeon is doing his rounds." />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="./icons/icon-512.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Dark Asylum" />
+  <meta name="apple-mobile-web-app-title" content="Dr. Aris" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png" />
   <link rel="manifest" href="./manifest.webmanifest" />
-  <script type="module" crossorigin src="./assets/index-BRMhC78D.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-BZXYd-Jt.css">
+  <script type="module" crossorigin src="./assets/index-Dvgej6Qn.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-COmIAaP_.css">
 </head>
 <body class="unbooted">
   <div id="loading-screen">
     <div class="panel-stack">
-      <div class="loading-skull">&#x1F480;</div>
-      <div class="loading-title">DARK ASYLUM</div>
-      <div class="loading-subtitle" data-i18n="loading.subtitle">PROTOKOL 7</div>
+      <div class="loading-skull">&#x1FA7A;</div>
+      <div class="loading-title">DR. ARIS</div>
+      <div class="loading-subtitle" data-i18n="loading.subtitle">THE MAD SURGEON</div>
       <div class="loading-bar-container"><div class="loading-bar" id="loading-bar"></div></div>
       <div class="loading-text" id="loading-text" data-i18n="loading.text">Yuklanmoqda...</div>
     </div>
   </div>
 
+  <!--
+    The opening screen is a patient chart, not a menu page.
+
+    There is no landing paragraph and no row of form controls out front: what
+    the player is handed is PROTOKOL 7, the chart that was open on the tray
+    beside the bed. The story is the first tab, the live quest chain is the
+    second, and the settings are kept on the third, where a form belongs. The
+    wax seal at the foot of the chart is the only way in.
+  -->
   <div id="start-screen" class="hidden">
-    <div class="panel-stack">
-      <div class="menu-eyebrow" data-i18n="menu.eyebrow">QO'RSINCHLI O'YIN</div>
-      <div class="menu-title">DARK ASYLUM</div>
-      <div class="menu-subtitle" data-i18n="loading.subtitle">PROTOKOL 7</div>
-      <div class="start-story">
-        <p data-i18n="menu.story"></p>
-      </div>
-      <button id="start-btn" class="glow-btn" data-i18n="menu.start">BOSHLASH</button>
-      <!-- Only shown when a half-finished run was checkpointed. Its label is
-           set from script, so it carries no data-i18n attribute. -->
-      <button id="continue-btn" class="ghost-btn hidden"></button>
-      <div class="menu-settings-block">
-        <div class="setting-row"><label data-i18n="menu.sensitivity">Sezgirlilik</label><input type="range" class="setting-sensitivity" min="0.4" max="2.5" step="0.1" value="1" /></div>
-        <div class="setting-row"><label data-i18n="menu.graphics">Grafika</label>
-          <select class="setting-quality">
-            <option value="low" data-i18n="menu.quality.low">Past</option>
-            <option value="medium" data-i18n="menu.quality.medium">O'rta</option>
-            <option value="high" selected data-i18n="menu.quality.high">Yuqori</option>
-          </select>
+    <div class="journal">
+      <header class="journal-head">
+        <div class="journal-stamp" data-i18n="journal.stamp">SENT-JUD RUHIIY KASALXONASI · 1987</div>
+        <h1 class="journal-title" data-i18n="journal.title">PROTOKOL 7 — BEMOR KARTASI</h1>
+        <div class="journal-patient">
+          <span data-i18n="journal.patient">BEMOR</span>
+          <strong data-i18n="journal.patientName">404-XONA · ISMI O'CHIRILGAN</strong>
+          <span data-i18n="journal.doctor">SHIFOKOR</span>
+          <strong class="journal-doctor" data-i18n="journal.doctorName">DR. ARIS</strong>
         </div>
-        <div class="setting-row"><label data-i18n="menu.sound">Ovoz</label><input type="checkbox" class="setting-muted" /></div>
-        <div class="setting-row"><label data-i18n="menu.language">Til</label>
-          <div class="lang-picker" data-lang-picker>
-            <button type="button" class="lang-btn" data-lang="uz">UZ</button>
-            <button type="button" class="lang-btn" data-lang="en">EN</button>
-            <button type="button" class="lang-btn" data-lang="ru">RU</button>
+      </header>
+
+      <nav class="journal-tabs" role="tablist">
+        <button type="button" class="journal-tab active" data-jtab="history" data-i18n="journal.tabHistory">1 · TARIX</button>
+        <button type="button" class="journal-tab" data-jtab="quests" data-i18n="journal.tabQuests">2 · VAZIFALAR</button>
+        <button type="button" class="journal-tab" data-jtab="settings" data-i18n="journal.tabSettings">3 · SOZLAMALAR</button>
+      </nav>
+
+      <div class="journal-body">
+        <section class="journal-panel active" data-jpanel="history">
+          <p class="journal-text" data-i18n="menu.story"></p>
+          <ul class="journal-warnings">
+            <li data-i18n="journal.warn1"></li>
+            <li data-i18n="journal.warn2"></li>
+            <li data-i18n="journal.warn3"></li>
+          </ul>
+        </section>
+
+        <section class="journal-panel" data-jpanel="quests">
+          <div class="journal-quest-head">
+            <span data-i18n="journal.questHead">PROTOKOL 7 — VAZIFALAR ZANJIRI</span>
+            <span id="journal-quest-progress" class="journal-quest-progress"></span>
           </div>
-        </div>
+          <ol class="journal-quests" id="journal-quests"></ol>
+        </section>
+
+        <section class="journal-panel" data-jpanel="settings">
+          <div class="journal-setting">
+            <label data-i18n="menu.sensitivity">Sezgirlilik</label>
+            <input type="range" class="setting-sensitivity" min="0.4" max="2.5" step="0.1" value="1" />
+          </div>
+          <div class="journal-setting">
+            <label data-i18n="menu.graphics">Grafika</label>
+            <select class="setting-quality">
+              <option value="low" data-i18n="menu.quality.low">Past</option>
+              <option value="medium" data-i18n="menu.quality.medium">O'rta</option>
+              <option value="high" selected data-i18n="menu.quality.high">Yuqori</option>
+            </select>
+          </div>
+          <div class="journal-setting">
+            <label data-i18n="menu.sound">Ovoz</label>
+            <input type="range" class="setting-volume" min="0" max="1" step="0.05" value="0.5" />
+            <input type="checkbox" class="setting-muted" data-i18n-title="menu.mute" />
+          </div>
+          <div class="journal-setting">
+            <label data-i18n="menu.language">Til</label>
+            <div class="lang-picker" data-lang-picker>
+              <button type="button" class="lang-btn" data-lang="uz">UZ</button>
+              <button type="button" class="lang-btn" data-lang="en">EN</button>
+              <button type="button" class="lang-btn" data-lang="ru">RU</button>
+            </div>
+          </div>
+          <div class="menu-stats journal-stats">
+            <div class="stat"><span class="stat-label" data-i18n="menu.bestTime">Eng yaxshi vaqt</span><span class="stat-value" id="best-time">—</span></div>
+          </div>
+          <div class="menu-controls" data-i18n="menu.controls"></div>
+          <div class="menu-controls touch-only" data-i18n="menu.controlsTouch"></div>
+        </section>
       </div>
-      <div class="menu-stats">
-        <div class="stat"><span class="stat-label" data-i18n="menu.bestTime">Eng yaxshi vaqt</span><span class="stat-value" id="best-time">—</span></div>
-      </div>
-      <div class="menu-controls" data-i18n="menu.controls"></div>
-      <div class="menu-controls touch-only" data-i18n="menu.controlsTouch"></div>
+
+      <footer class="journal-foot">
+        <button id="start-btn" class="wax-seal" type="button">
+          <span class="wax-seal-ring"></span>
+          <span class="wax-seal-text" data-i18n="journal.seal">O'RNINGIZDAN TURISH VA O'YINNI BOSHLASH</span>
+        </button>
+        <!-- Only shown when a half-finished run was checkpointed. Its label is
+             set from script, so it carries no data-i18n attribute. -->
+        <button id="continue-btn" class="ghost-btn hidden" type="button"></button>
+      </footer>
     </div>
   </div>
 
@@ -134,7 +188,7 @@
   <div id="damage-flash"></div>
   <div id="lightning-flash"></div>
 
-  <!-- Cinematic intro overlays -->
+  <!-- Cinematic prologue overlays -->
   <div id="intro-eyelid" class="hidden">
     <div class="eyelid-top"></div>
     <div class="eyelid-bottom"></div>

@@ -19,6 +19,25 @@ export class HorrorAudio {
   private staticGain: GainNode | null = null;
   private isInitialized = false;
   private ambienceRunning = false;
+  /**
+   * One second of white noise, built once and reused by every footfall.
+   *
+   * The old step built a fresh AudioBuffer per stride - five thousand samples
+   * and a fresh allocation, sixty times a minute and twice that when running.
+   * That is a garbage-collection hitch timed to land exactly as the boot hits
+   * the tile.
+   */
+  private noiseBuffer: AudioBuffer | null = null;
+  /** Two-track music system: exploration BGM vs chase music. */
+  private chaseGain: GainNode | null = null;
+  private chaseOscs: OscillatorNode[] = [];
+  private chaseRunning = false;
+  private musicState: 'explore' | 'chase' = 'explore';
+
+  /** Volume targets for the two tracks. */
+  private static readonly EXPLORE_BGM_VOL = 0.35;
+  private static readonly CHASE_MUSIC_VOL = 0.55;
+
   private muted = false;
   private volume = 0.5;
 
@@ -35,6 +54,7 @@ export class HorrorAudio {
     this.ambienceGain.connect(this.masterGain);
 
     this.isInitialized = true;
+    this.installVisibilityHandler();
   }
 
   resume(): void {
@@ -354,31 +374,200 @@ export class HorrorAudio {
     noise.start(now);
   }
 
-  /** Footstep on concrete. */
-  playFootstep(volume: number = 0.3): void {
-    if (!this.ctx || !this.masterGain) return;
+  /** The shared noise buffer, built on first use. */
+  private noise(): AudioBuffer | null {
+    const ctx = this.ctx;
+    if (!ctx) return null;
+    if (this.noiseBuffer) return this.noiseBuffer;
 
-    const bufferSize = Math.floor(this.ctx.sampleRate * 0.12);
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const length = Math.floor(ctx.sampleRate);
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
     const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.09));
-    }
+    for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    this.noiseBuffer = buffer;
+    return buffer;
+  }
 
-    const source = this.ctx.createBufferSource();
+  /**
+   * A boot coming down on cold tile.
+   *
+   * A muted thud rather than a plastic click: half a step of low-passed noise
+   * for the sole, and a short near-subsonic body tone for the weight behind it.
+   * Both run off the cached noise buffer, so a stride costs no allocation and
+   * the sound can never arrive late on the frame it belongs to.
+   */
+  playFootstep(running: boolean = false): void {
+    const ctx = this.ctx;
+    const buffer = this.noise();
+    if (!ctx || !this.masterGain || !buffer) return;
+    const now = ctx.currentTime;
+
+    const source = ctx.createBufferSource();
     source.buffer = buffer;
+    source.playbackRate.value = 1;
 
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 380 + Math.random() * 220;
+    const sole = ctx.createBiquadFilter();
+    sole.type = 'lowpass';
+    sole.frequency.value = (running ? 640 : 470) + Math.random() * 150;
+    sole.Q.value = 0.7;
 
-    const gain = this.ctx.createGain();
-    gain.gain.value = volume;
+    const soleGain = ctx.createGain();
+    soleGain.gain.setValueAtTime(0.0001, now);
+    soleGain.gain.exponentialRampToValueAtTime(running ? 0.4 : 0.28, now + 0.012);
+    soleGain.gain.exponentialRampToValueAtTime(0.0001, now + (running ? 0.2 : 0.27));
 
-    source.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.masterGain);
-    source.start();
+    source.connect(sole).connect(soleGain).connect(this.masterGain);
+    source.start(now);
+    source.stop(now + 0.3);
+
+    // The weight behind the step, felt more than heard.
+    const body = ctx.createOscillator();
+    body.type = 'sine';
+    body.frequency.setValueAtTime(running ? 98 : 78, now);
+    body.frequency.exponentialRampToValueAtTime(running ? 55 : 46, now + 0.12);
+
+    const bodyGain = ctx.createGain();
+    bodyGain.gain.setValueAtTime(0.0001, now);
+    bodyGain.gain.exponentialRampToValueAtTime(running ? 0.26 : 0.18, now + 0.014);
+    bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+
+    body.connect(bodyGain).connect(this.masterGain);
+    body.start(now);
+    body.stop(now + 0.18);
+  }
+
+  /**
+   * The ward monitor: one clean ECG beep over the hiss of a flat line.
+   *
+   * The prologue hangs on it - the only machine still powered in Room 404 is
+   * the one wired to a bed that has nobody in it.
+   */
+  playFlatline(volume: number = 0.22): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.masterGain) return;
+    const now = ctx.currentTime;
+
+    const beep = ctx.createOscillator();
+    beep.type = 'sine';
+    beep.frequency.value = 1046;
+    const beepGain = ctx.createGain();
+    beepGain.gain.setValueAtTime(0.0001, now);
+    beepGain.gain.exponentialRampToValueAtTime(volume, now + 0.01);
+    beepGain.gain.setValueAtTime(volume, now + 0.16);
+    beepGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
+    beep.connect(beepGain).connect(this.masterGain);
+    beep.start(now);
+    beep.stop(now + 0.3);
+
+    const buffer = this.noise();
+    if (!buffer) return;
+    const hiss = ctx.createBufferSource();
+    hiss.buffer = buffer;
+    hiss.loop = true;
+    const hissFilter = ctx.createBiquadFilter();
+    hissFilter.type = 'bandpass';
+    hissFilter.frequency.value = 2600;
+    hissFilter.Q.value = 0.6;
+    const hissGain = ctx.createGain();
+    hissGain.gain.setValueAtTime(0.0001, now);
+    hissGain.gain.linearRampToValueAtTime(volume * 0.22, now + 0.4);
+    hissGain.gain.linearRampToValueAtTime(0.0001, now + 5.5);
+    hiss.connect(hissFilter).connect(hissGain).connect(this.masterGain);
+    hiss.start(now);
+    hiss.stop(now + 5.6);
+  }
+
+  /**
+   * The bone saw spun up: a ragged engine with a metallic edge on the blade.
+   *
+   * Fired when Dr Aris commits to the chase, so the player hears the moment he
+   * stops stalking and starts hunting.
+   */
+  playSawRev(volume: number = 0.3): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.masterGain) return;
+    const now = ctx.currentTime;
+
+    const motor = ctx.createOscillator();
+    motor.type = 'sawtooth';
+    motor.frequency.setValueAtTime(28, now);
+    motor.frequency.exponentialRampToValueAtTime(96, now + 0.5);
+    motor.frequency.exponentialRampToValueAtTime(58, now + 1.5);
+
+    const blade = ctx.createBiquadFilter();
+    blade.type = 'bandpass';
+    blade.frequency.value = 1400;
+    blade.Q.value = 2.4;
+
+    const motorGain = ctx.createGain();
+    motorGain.gain.setValueAtTime(0.0001, now);
+    motorGain.gain.exponentialRampToValueAtTime(volume, now + 0.35);
+    motorGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.7);
+
+    motor.connect(blade).connect(motorGain).connect(this.masterGain);
+    motor.start(now);
+    motor.stop(now + 1.8);
+
+    // Teeth catching the air, so it reads as a saw and not a moped.
+    const buffer = this.noise();
+    if (!buffer) return;
+    const teeth = ctx.createBufferSource();
+    teeth.buffer = buffer;
+    teeth.loop = true;
+    const teethFilter = ctx.createBiquadFilter();
+    teethFilter.type = 'highpass';
+    teethFilter.frequency.value = 2200;
+    const teethGain = ctx.createGain();
+    teethGain.gain.setValueAtTime(0.0001, now);
+    teethGain.gain.linearRampToValueAtTime(volume * 0.3, now + 0.5);
+    teethGain.gain.linearRampToValueAtTime(0.0001, now + 1.6);
+    teeth.connect(teethFilter).connect(teethGain).connect(this.masterGain);
+    teeth.start(now);
+    teeth.stop(now + 1.7);
+  }
+
+  /**
+   * The saw dragging across the floor as he walks: teeth skidding over wet
+   * tile, with the blade ringing under it.
+   */
+  playSawDrag(volume: number = 0.24): void {
+    const ctx = this.ctx;
+    const buffer = this.noise();
+    if (!ctx || !this.masterGain || !buffer) return;
+    const now = ctx.currentTime;
+
+    const drag = ctx.createBufferSource();
+    drag.buffer = buffer;
+    drag.playbackRate.value = 0.6;
+
+    const scrape = ctx.createBiquadFilter();
+    scrape.type = 'bandpass';
+    scrape.frequency.setValueAtTime(900, now);
+    scrape.frequency.exponentialRampToValueAtTime(2600, now + 0.7);
+    scrape.Q.value = 5.5;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(volume, now + 0.08);
+    gain.gain.exponentialRampToValueAtTime(volume * 0.5, now + 0.55);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.95);
+
+    drag.connect(scrape).connect(gain).connect(this.masterGain);
+    drag.start(now);
+    drag.stop(now + 1.0);
+
+    // The blade itself, ringing above the scrape.
+    const ring = ctx.createOscillator();
+    ring.type = 'triangle';
+    ring.frequency.setValueAtTime(1830, now);
+    ring.frequency.exponentialRampToValueAtTime(1240, now + 0.9);
+    const ringGain = ctx.createGain();
+    ringGain.gain.setValueAtTime(0.0001, now);
+    ringGain.gain.exponentialRampToValueAtTime(volume * 0.28, now + 0.12);
+    ringGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.9);
+    ring.connect(ringGain).connect(this.masterGain);
+    ring.start(now);
+    ring.stop(now + 0.95);
   }
 
   /**
@@ -1527,17 +1716,250 @@ export class HorrorAudio {
     chain.start(now + 0.2);
   }
 
+
+  // ------------------------------------------------------------------
+  // Two-track dynamic music system
+  // ------------------------------------------------------------------
+
+  /**
+   * Build the chase music graph: fast pulsing bass, dissonant pads,
+   * rhythmic noise percussion, and a high-tension drone.
+   * Only built once — volume is toggled via `chaseGain`.
+   */
+  private buildChaseMusicGraph(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.masterGain) return;
+
+    this.chaseGain = ctx.createGain();
+    this.chaseGain.gain.value = 0;
+    this.chaseGain.connect(this.masterGain);
+
+    const bpm = 150;
+
+    // 1. Fast pulsing sub-bass (four-on-the-floor throb)
+    const kickOsc = ctx.createOscillator();
+    kickOsc.type = 'sine';
+    kickOsc.frequency.value = 42;
+    const kickFilter = ctx.createBiquadFilter();
+    kickFilter.type = 'lowpass';
+    kickFilter.frequency.value = 120;
+    const kickGain = ctx.createGain();
+    kickGain.gain.value = 0.4;
+    const kickLfo = ctx.createOscillator();
+    kickLfo.type = 'square';
+    kickLfo.frequency.value = bpm / 60;
+    const kickLfoGain = ctx.createGain();
+    kickLfoGain.gain.value = 0.35;
+    kickLfo.connect(kickLfoGain);
+    kickLfoGain.connect(kickGain.gain);
+    kickOsc.connect(kickFilter);
+    kickFilter.connect(kickGain);
+    kickGain.connect(this.chaseGain);
+    this.chaseOscs.push(kickOsc, kickLfo);
+
+    // 2. Dissonant pad layer (two detuned sawtooth waves)
+    const padA = ctx.createOscillator();
+    padA.type = 'sawtooth';
+    padA.frequency.value = 110;
+    const padB = ctx.createOscillator();
+    padB.type = 'sawtooth';
+    padB.frequency.value = 116.5;
+    const padFilter = ctx.createBiquadFilter();
+    padFilter.type = 'lowpass';
+    padFilter.frequency.value = 380;
+    const padGain = ctx.createGain();
+    padGain.gain.value = 0.12;
+    padA.connect(padFilter);
+    padB.connect(padFilter);
+    padFilter.connect(padGain);
+    padGain.connect(this.chaseGain);
+    this.chaseOscs.push(padA, padB);
+
+    // 3. High tension drone (screechy overtone)
+    const droneOsc = ctx.createOscillator();
+    droneOsc.type = 'sawtooth';
+    droneOsc.frequency.value = 440;
+    const droneFilter = ctx.createBiquadFilter();
+    droneFilter.type = 'bandpass';
+    droneFilter.frequency.value = 900;
+    droneFilter.Q.value = 8;
+    const droneGain = ctx.createGain();
+    droneGain.gain.value = 0.06;
+    droneOsc.connect(droneFilter);
+    droneFilter.connect(droneGain);
+    droneGain.connect(this.chaseGain);
+    this.chaseOscs.push(droneOsc);
+
+    const droneLfo = ctx.createOscillator();
+    droneLfo.type = 'sine';
+    droneLfo.frequency.value = 0.4;
+    const droneLfoGain = ctx.createGain();
+    droneLfoGain.gain.value = 12;
+    droneLfo.connect(droneLfoGain);
+    droneLfoGain.connect(droneOsc.frequency);
+    this.chaseOscs.push(droneLfo);
+
+    // 4. Rhythmic noise percussion (filtered noise bursts)
+    const noiseLen = Math.floor(ctx.sampleRate * 2);
+    const noiseBuffer = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+    const noiseData = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < noiseLen; i++) {
+      noiseData[i] = Math.random() * 2 - 1;
+    }
+    const noiseSource = ctx.createBufferSource();
+    noiseSource.buffer = noiseBuffer;
+    noiseSource.loop = true;
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'bandpass';
+    noiseFilter.frequency.value = 1800;
+    noiseFilter.Q.value = 2;
+    const noiseLfo = ctx.createOscillator();
+    noiseLfo.type = 'square';
+    noiseLfo.frequency.value = (bpm / 60) * 4;
+    const noiseLfoGain = ctx.createGain();
+    noiseLfoGain.gain.value = 0.12;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.value = 0.15;
+    noiseLfo.connect(noiseLfoGain);
+    noiseLfoGain.connect(noiseGain.gain);
+    noiseSource.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(this.chaseGain);
+
+    // 5. Hi-hat pattern via high noise
+    const hhFilter = ctx.createBiquadFilter();
+    hhFilter.type = 'highpass';
+    hhFilter.frequency.value = 6000;
+    const hhGain = ctx.createGain();
+    hhGain.gain.value = 0.08;
+    const hhLfo = ctx.createOscillator();
+    hhLfo.type = 'square';
+    hhLfo.frequency.value = (bpm / 60) * 2;
+    const hhLfoGain = ctx.createGain();
+    hhLfoGain.gain.value = 0.07;
+    hhLfo.connect(hhLfoGain);
+    hhLfoGain.connect(hhGain.gain);
+    noiseSource.connect(hhFilter);
+    hhFilter.connect(hhGain);
+    hhGain.connect(this.chaseGain);
+    this.chaseOscs.push(hhLfo);
+
+    // Start everything
+    for (const osc of this.chaseOscs) osc.start();
+    noiseSource.start();
+  }
+
+  /**
+   * Smooth crossfade from exploration to chase music.
+   * Fades out the ambience over 0.5s and brings in the chase track.
+   * Also fires the bone-saw rev sound effect.
+   */
+  crossfadeToChase(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+
+    if (!this.chaseRunning) {
+      this.buildChaseMusicGraph();
+      this.chaseRunning = true;
+    }
+
+    this.musicState = 'chase';
+    const now = ctx.currentTime;
+
+    // Fade out exploration ambience (0.5s)
+    if (this.ambienceGain) {
+      this.ambienceGain.gain.cancelScheduledValues(now);
+      this.ambienceGain.gain.setValueAtTime(
+        this.ambienceGain.gain.value,
+        now,
+      );
+      this.ambienceGain.gain.linearRampToValueAtTime(0, now + 0.5);
+    }
+
+    // Fade in chase music (0.5s)
+    if (this.chaseGain) {
+      this.chaseGain.gain.cancelScheduledValues(now);
+      this.chaseGain.gain.setValueAtTime(
+        this.chaseGain.gain.value,
+        now,
+      );
+      this.chaseGain.gain.linearRampToValueAtTime(
+        HorrorAudio.CHASE_MUSIC_VOL,
+        now + 0.5,
+      );
+    }
+
+    // Bone-saw rev on commitment to the chase
+    this.playSawRev(0.3);
+  }
+
+  /**
+   * Smooth crossfade from chase back to exploration ambience.
+   * Fades out chase music over 1s and raises the ambience back.
+   */
+  crossfadeToExplore(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+
+    this.musicState = 'explore';
+    const now = ctx.currentTime;
+
+    // Fade out chase music (1s)
+    if (this.chaseGain) {
+      this.chaseGain.gain.cancelScheduledValues(now);
+      this.chaseGain.gain.setValueAtTime(
+        this.chaseGain.gain.value,
+        now,
+      );
+      this.chaseGain.gain.linearRampToValueAtTime(0, now + 1);
+    }
+
+    // Fade in exploration ambience (1s)
+    if (this.ambienceGain) {
+      this.ambienceGain.gain.cancelScheduledValues(now);
+      this.ambienceGain.gain.setValueAtTime(
+        this.ambienceGain.gain.value,
+        now,
+      );
+      this.ambienceGain.gain.linearRampToValueAtTime(
+        HorrorAudio.EXPLORE_BGM_VOL,
+        now + 1,
+      );
+    }
+  }
+
+  /** Current music state for external queries. */
+  get currentMusicState(): 'explore' | 'chase' {
+    return this.musicState;
+  }
+
+  /**
+   * Handle mobile audio lifecycle: pause when hidden, resume when visible.
+   */
+  private installVisibilityHandler(): void {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this.suspend();
+      } else {
+        this.resume();
+      }
+    });
+  }
+
   destroy(): void {
     try {
       this.ambienceOsc?.stop();
       this.ambienceOsc2?.stop();
       this.windSource?.stop();
       this.rainSource?.stop();
+      for (const osc of this.chaseOscs) osc.stop();
     } catch {
       /* oscillators may already be stopped */
     }
     void this.ctx?.close();
     this.isInitialized = false;
     this.ambienceRunning = false;
+    this.chaseRunning = false;
+    this.musicState = 'explore';
   }
 }

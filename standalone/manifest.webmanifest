@@ -1,8 +1,8 @@
 {
   "id": "dark-asylum",
-  "name": "Dark Asylum — Protokol 7",
-  "short_name": "Dark Asylum",
-  "description": "3D First-Person Psychological Horror Game. Explore a 7-floor abandoned asylum with 49 rooms, 20 lore notes, a deranged surgeon monster, hiding mechanics, and 3 escape routes. No ads, no tracking, fully offline.",
+  "name": "DR. ARIS: THE MAD SURGEON",
+  "short_name": "Dr. Aris",
+  "description": "DR. ARIS: THE MAD SURGEON — 3D first-person psychological horror. Wake as Patient 404 in the abandoned St. Jude asylum: read the chart, search the wards, hide from the surgeon and escape. No ads, no tracking, fully offline.",
   "lang": "uz",
   "dir": "ltr",
   "start_url": "./",

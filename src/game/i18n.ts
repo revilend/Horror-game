@@ -83,8 +83,8 @@ export function L(value: Localized): string {
 
 const UI: Record<string, Localized> = {
   /* ---- loading & menu ---- */
-  'loading.title': { uz: 'DARK ASYLUM', en: 'DARK ASYLUM', ru: 'DARK ASYLUM' },
-  'loading.subtitle': { uz: 'PROTOKOL 7', en: 'PROTOCOL 7', ru: 'ПРОТОКОЛ 7' },
+  'loading.title': { uz: 'DR. ARIS', en: 'DR. ARIS', ru: 'Д-Р АРИС' },
+  'loading.subtitle': { uz: 'THE MAD SURGEON', en: 'THE MAD SURGEON', ru: 'БЕЗУМНЫЙ ХИРУРГ' },
   'loading.text': { uz: 'Yuklanmoqda...', en: 'Loading...', ru: 'Загрузка...' },
   'loading.1': { uz: 'Kasalxona eshigi ochilmoqda...', en: 'Opening the asylum door...', ru: 'Дверь больницы открывается...' },
   'loading.2': { uz: 'Xonalar qurilmoqda...', en: 'Building the rooms...', ru: 'Строятся палаты...' },
@@ -95,7 +95,57 @@ const UI: Record<string, Localized> = {
   'loading.failed': { uz: 'Xatolik yuz berdi! Qayta yuklang.', en: 'Something went wrong. Reload the page.', ru: 'Произошла ошибка. Перезагрузите страницу.' },
 
   'menu.eyebrow': { uz: "QO'RSINCHLI O'YIN", en: 'HORROR GAME', ru: 'ХОРРОР-ИГРА' },
-  'menu.title': { uz: 'DARK ASYLUM', en: 'DARK ASYLUM', ru: 'DARK ASYLUM' },
+  'menu.title': { uz: 'DR. ARIS', en: 'DR. ARIS', ru: 'Д-Р АРИС' },
+
+  /* ---- the diegetic chart: PROTOKOL 7, the game's only menu ---- */
+  'journal.stamp': {
+    uz: 'SENT-JUD RUHIIY KASALXONASI · 1987',
+    en: 'ST. JUDE MENTAL ASYLUM · 1987',
+    ru: 'ПСИХИАТРИЧЕСКАЯ ЛЕЧЕБНИЦА СЕНТ-ДЖУД · 1987',
+  },
+  'journal.title': {
+    uz: 'PROTOKOL 7 — BEMOR KARTASI',
+    en: 'PROTOCOL 7 — PATIENT CHART',
+    ru: 'ПРОТОКОЛ 7 — КАРТА ПАЦИЕНТА',
+  },
+  'journal.patient': { uz: 'BEMOR', en: 'PATIENT', ru: 'ПАЦИЕНТ' },
+  'journal.patientName': {
+    uz: "404-XONA · ISMI O'CHIRILGAN",
+    en: 'ROOM 404 · NAME STRUCK OUT',
+    ru: 'ПАЛАТА 404 · ИМЯ ЗАЧЁРКНУТО',
+  },
+  'journal.doctor': { uz: 'SHIFOKOR', en: 'PHYSICIAN', ru: 'ВРАЧ' },
+  'journal.doctorName': { uz: 'DR. ARIS', en: 'DR. ARIS', ru: 'Д-Р АРИС' },
+  'journal.tabHistory': { uz: '1 · TARIX', en: '1 · HISTORY', ru: '1 · ИСТОРИЯ' },
+  'journal.tabQuests': { uz: '2 · VAZIFALAR', en: '2 · OBJECTIVES', ru: '2 · ЗАДАЧИ' },
+  'journal.tabSettings': { uz: '3 · SOZLAMALAR', en: '3 · SETTINGS', ru: '3 · НАСТРОЙКИ' },
+  'journal.questHead': {
+    uz: 'PROTOKOL 7 — VAZIFALAR ZANJIRI',
+    en: 'PROTOCOL 7 — OBJECTIVE CHAIN',
+    ru: 'ПРОТОКОЛ 7 — ЦЕПОЧКА ЗАДАЧ',
+  },
+  'journal.questProgress': { uz: '{done}/{total} bajarildi', en: '{done}/{total} done', ru: '{done}/{total} выполнено' },
+  'journal.seal': {
+    uz: "O'RNINGIZDAN TURISH VA O'YINNI BOSHLASH",
+    en: 'RISE FROM THE BED AND BEGIN',
+    ru: 'ПОДНЯТЬСЯ И НАЧАТЬ',
+  },
+  'journal.warn1': {
+    uz: 'Dr. Aris tunda ko‘rikdan o‘tadi. Eshikni yopib, chiroqni o‘chiring.',
+    en: 'Dr Aris does his rounds after dark. Shut the door and kill the light.',
+    ru: 'Доктор Арис обходит палаты ночью. Закройте дверь и погасите свет.',
+  },
+  'journal.warn2': {
+    uz: 'Shkaflar va karavot ostlari yashirinish uchun. U o‘tib ketishini kuting.',
+    en: 'Wardrobes and the space under beds hide you. Wait for him to pass.',
+    ru: 'Шкафы и место под койками спасают. Дождитесь, пока он пройдёт.',
+  },
+  'journal.warn3': {
+    uz: 'Protokol 7 ni imzolagan odam qochib ketolmagan. Siz ham qochishingiz kerak.',
+    en: 'The man who signed Protocol 7 never got out. You still can.',
+    ru: 'Тот, кто подписал Протокол 7, не вышел. У вас ещё есть шанс.',
+  },
+  'menu.mute': { uz: 'Ovozsiz', en: 'Mute', ru: 'Без звука' },
   'menu.story': {
     uz: "Siz Doktor Elias Ren — Protokol 7 ni imzolagan oxirgi jarroh. 1987-yil 4-noyabrda bemorlar bir xonaga yopildi, kasalxona qulflandi va hech kim chiqmadi. Siz ertalab yolg'iz uyg'ondingiz, eshiklar bog'langan, va koridorlardagi tovushlar sizni tanigan ovozda chaqiryapti. U sizni eslaydi. U sizni kutmoqda. Uchta kalitni toping, saqlagichni ulang va darvozadan chiqib ketishdan oldin u sizni topmasin.",
     en: 'You are Dr Elias Ren - the last surgeon to sign Protocol 7. On 4 November 1987 the patients were sealed into one room, the hospital was locked, and nobody came out. You woke alone this morning: the doors are chained and the sounds in the corridors call you in a voice you know. He remembers you. He is waiting for you. Find three keys, restore the breaker, and get through the gate before he finds you first.',
@@ -206,9 +256,14 @@ const UI: Record<string, Localized> = {
   'intro.skip': { uz: 'INTRODAN O‘TISH ▸▸', en: 'SKIP INTRO ▸▸', ru: 'ПРОПУСТИТЬ ▸▸' },
   'intro.tapeLabel': { uz: 'AUDIO TAPE #0 — DR. ARIS', en: 'AUDIO TAPE #0 — DR. ARIS', ru: 'АУДИОПЛЁНКА №0 — Д-Р АРИС' },
   'intro.narration': {
-    uz: "1987-yil 4-noyabr. Bemor №404. Xotirani o'chirish kursi tugallandi. Bemor o'zini begunoh tergovchi deb biladi. U hali bilmaydi... u tergov qilayotgan dahshat — o'z aybi.",
-    en: 'November 4th, 1987. Subject 404. Memory ablation therapy complete. The subject believes he is an innocent investigator. He does not yet know... that the horror he investigates is his own guilt.',
-    ru: '4 ноября 1987 года. Пациент №404. Курс стирания памяти завершён. Пациент считает себя невиновным следователем. Он ещё не знает... что ужас, который он расследует, — его собственная вина.',
+    uz: "1987-yil, 4-noyabr. Sent-Jud ruhiy kasalxonasi. Siz oxirgi jarrohsiz. Protokol 7 kuchga kirdi... Eshiklar tashqaridan zanjirlandi. Bemorlar bir xonada. Va koridorda kimdir... sizni eslayotgan ovoz bilan kelmoqda.",
+    en: '4 November 1987. St. Jude asylum. You are the last surgeon left. Protocol 7 came into force... The doors were chained from the outside. The patients are in one room. And in the corridor, someone is coming - in a voice that remembers you.',
+    ru: '4 ноября 1987 года. Лечебница Сент-Джуд. Вы — последний оставшийся хирург. Протокол 7 вступил в силу... Двери заперты снаружи. Пациенты в одной палате. А в коридоре кто-то идёт — голосом, который помнит вас.',
+  },
+  'intro.drag': {
+    uz: '...yaqinlashayotgan qadamlar, va ho‘l pichoqning yerga sudralishi...',
+    en: '...footsteps outside, and a wet blade dragging across the tiles...',
+    ru: '...шаги за дверью и скрежет мокрого лезвия по плитке...',
   },
   'intro.wall': {
     uz: 'ESLAMANG. U SHU YERDA.',

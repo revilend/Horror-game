@@ -112,7 +112,10 @@ export class HorrorEffects {
     // carries so corridors read as a place, not a black box.
     this.ambientLight = new THREE.AmbientLight(0x3d4a5c, 0.95);
 
-    scene.fog = new THREE.FogExp2(0x0a0f16, this.fogDensity);
+    // Cold, near-black air. Dense enough that a corridor fades out about a
+    // dozen metres ahead, thin enough that the player can always see the wall
+    // they are walking along.
+    scene.fog = new THREE.FogExp2(0x070a11, this.fogDensity);
     scene.background = createStormSkyTexture();
 
     this.attachToScene();
@@ -231,7 +234,8 @@ export class HorrorEffects {
 
     for (const light of lights) {
       light.intensity = 0;
-      light.distance = 10;
+      // Eleven metres: the ward and its doorway, and not the corridor beyond it.
+      light.distance = 11;
       this.roomLights.push(light);
       this.scene.add(light);
     }
@@ -307,8 +311,10 @@ export class HorrorEffects {
 
       light.position.set(entry.room.x, entry.room.y, entry.room.z);
       if (nowMs < entry.room.flickerEnd) {
-        const phase = Math.floor((entry.room.flickerEnd - nowMs) / 80);
-        light.intensity = phase % 2 === 0 ? 0.25 : 2.6;
+        // Two hard stutters, a tenth of a second each: a ballast striking a
+        // cold tube, which is what every room in this building does.
+        const phase = Math.floor((entry.room.flickerEnd - nowMs) / 100);
+        light.intensity = phase % 2 === 0 ? 0.2 : 2.7;
         continue;
       }
       light.intensity += (HorrorEffects.ROOM_LIGHT_INTENSITY - light.intensity) * Math.min(1, dt * 6);
@@ -528,8 +534,8 @@ export class HorrorEffects {
 
     // --- Fog: darkness, tension and danger all thicken it -----------------
     // Outside, the fog thins out and turns a wet blue-grey so the yard reads.
-    const indoorFog = 0.018 - this.powerLevel * 0.006 + tension * 0.005 + this.danger * 0.012;
-    const outdoorFog = 0.018 + this.danger * 0.015;
+    const indoorFog = 0.03 - this.powerLevel * 0.009 + tension * 0.006 + this.danger * 0.014;
+    const outdoorFog = 0.024 + this.danger * 0.016;
     const targetFog = indoorFog + (outdoorFog - indoorFog) * this.outdoorLevel;
     this.fogDensity += (targetFog - this.fogDensity) * dt * 0.7;
     if (this.scene.fog instanceof THREE.FogExp2) {

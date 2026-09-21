@@ -17,8 +17,38 @@ const STAMINA_REGEN = 17; // per second while recovering
 const STAMINA_REGEN_DELAY = 0.9; // seconds after sprinting ends
 const STAMINA_RUN_FLOOR = 4; // below this you cannot start another sprint
 
-const STEP_DISTANCE_WALK = 2.1;
-const STEP_DISTANCE_RUN = 2.7;
+/**
+ * How long one stride lasts.
+ *
+ * Time, not distance. A distance trigger fires in bursts whenever the frame
+ * rate wobbles, which is the machine-gun click the walls used to answer a slow
+ * walk with: 450 ms a step walking, 300 ms running.
+ */
+const STEP_WALK_INTERVAL = 0.45;
+const STEP_RUN_INTERVAL = 0.3;
+/**
+ * How hard the head bob is chased toward its wave.
+ *
+ * Roughly a tenth of the gap per frame at 60 fps. The wave itself is never
+ * written into the camera: sin() snapped to whatever the frame rate happens to
+ * be is what reads as a stutter rather than a walk.
+ */
+const BOB_SMOOTH = 6.5;
+
+/** The four cardinal edges of the player's body, tested against the walls. */
+const EDGE_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [PLAYER_RADIUS, 0],
+  [-PLAYER_RADIUS, 0],
+  [0, PLAYER_RADIUS],
+  [0, -PLAYER_RADIUS],
+];
+
+/* Per-frame scratch: nothing in the walk allocates after this. */
+const forwardVec = new THREE.Vector3();
+const rightVec = new THREE.Vector3();
+const moveVec = new THREE.Vector3();
+const nextPos = new THREE.Vector3();
+const lookVec = new THREE.Vector3();
 
 /**
  * First person controller.
@@ -45,7 +75,10 @@ export class Player {
   private currentHeight = EYE_HEIGHT;
   private stamina = STAMINA_MAX;
   private staminaIdle = 0;
-  private stepAccumulator = 0;
+  private stepTimer = 0;
+  /** Smoothed head bob and body roll, chased toward the walk cycle. */
+  private bobOffset = 0;
+  private bobRoll = 0;
   private lookSensitivity = 1;
   private grid: number[][] = [];
   /** Circular obstacles (furniture) the player is pushed out of. */
@@ -122,7 +155,9 @@ export class Player {
     this.joystickInput.y = 0;
     this.stamina = STAMINA_MAX;
     this.staminaIdle = STAMINA_REGEN_DELAY;
-    this.stepAccumulator = 0;
+    this.stepTimer = 0;
+    this.bobOffset = 0;
+    this.bobRoll = 0;
     this.headBobPhase = 0;
     this.isRunning = false;
     this.isCrouched = false;
@@ -176,7 +211,7 @@ export class Player {
   /** Points the camera along yaw/pitch. Safe to call while input is disabled. */
   private applyCamera(): void {
     this.camera.position.copy(this.position);
-    const lookTarget = new THREE.Vector3(
+    const lookTarget = lookVec.set(
       this.position.x - Math.sin(this.yaw) * Math.cos(this.pitch),
       this.position.y + Math.sin(this.pitch),
       this.position.z - Math.cos(this.yaw) * Math.cos(this.pitch)
@@ -372,18 +407,23 @@ export class Player {
 
   update(dt: number): void {
     if (this.inputDisabled) return;
-    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-    const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
-    const moveDir = new THREE.Vector3();
+    // Scratch vectors, reused every frame. This walk used to build five vectors,
+    // a clone and an array per frame - a few hundred short-lived objects a
+    // second, which is a garbage collection every couple of seconds, and a
+    // collection on a phone lands as a visible catch in the middle of a stride.
+    const forward = forwardVec.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+    const right = rightVec.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    const moveDir = moveVec.set(0, 0, 0);
+
     if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) moveDir.add(forward);
     if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) moveDir.sub(forward);
     if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) moveDir.sub(right);
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) moveDir.add(right);
 
     if (Math.abs(this.joystickInput.x) > 0.08 || Math.abs(this.joystickInput.y) > 0.08) {
-      moveDir.add(forward.clone().multiplyScalar(-this.joystickInput.y));
-      moveDir.add(right.clone().multiplyScalar(this.joystickInput.x));
+      moveDir.addScaledVector(forward, -this.joystickInput.y);
+      moveDir.addScaledVector(right, this.joystickInput.x);
     }
 
     this.isMoving = moveDir.lengthSq() > 0.01;
@@ -406,16 +446,14 @@ export class Player {
     this.velocity.copy(moveDir).multiplyScalar(speed);
 
     // --- Movement + wall collision ----------------------------------------
-    const newPos = this.position.clone();
+    const newPos = nextPos.copy(this.position);
     newPos.x += this.velocity.x * dt;
     newPos.z += this.velocity.z * dt;
 
-    const offsets: Array<[number, number]> = [
-      [PLAYER_RADIUS, 0],
-      [-PLAYER_RADIUS, 0],
-      [0, PLAYER_RADIUS],
-      [0, -PLAYER_RADIUS],
-    ];
+    // The four cardinal edges of the body, as a constant rather than a fresh
+    // array every frame. isWalkable() itself is a couple of lookups, so the
+    // cost of the test was never the probes - it was building them.
+    const offsets = EDGE_OFFSETS;
 
     let canMoveX = true;
     for (const [ox, oz] of offsets) {
@@ -462,27 +500,41 @@ export class Player {
     this.currentHeight += (targetHeight - this.currentHeight) * Math.min(1, dt * CROUCH_LERP);
 
     // --- Head bob ----------------------------------------------------------
-    let roll = 0;
-    if (this.isMoving) {
-      const bobSpeed = sprinting ? HEAD_BOB_SPEED * 1.45 : HEAD_BOB_SPEED;
-      const bobAmount = (sprinting ? HEAD_BOB_AMOUNT * 1.35 : HEAD_BOB_AMOUNT) * (this.isCrouched ? 0.3 : 1);
-      this.headBobPhase += dt * bobSpeed;
-      this.position.y =
-        this.groundHeight + this.currentHeight + Math.sin(this.headBobPhase) * bobAmount;
-      roll = Math.sin(this.headBobPhase * 0.5) * (sprinting ? 0.035 : 0.02) * (this.isCrouched ? 0.3 : 1);
-    } else {
-      this.headBobPhase = 0;
-      const restingHeight = this.groundHeight + this.currentHeight;
-      this.position.y += (restingHeight - this.position.y) * Math.min(1, dt * 6);
-    }
+    // The walk cycle is a wave; the camera is a smoothed offset chased toward
+    // it, which is what turns a frame-rate-shaped sin() into a walk.
+    if (this.isMoving) this.headBobPhase += dt * (sprinting ? HEAD_BOB_SPEED * 1.45 : HEAD_BOB_SPEED);
+    else this.headBobPhase = 0;
+
+    const crouchScale = this.isCrouched ? 0.3 : 1;
+    const bobAmount =
+      (sprinting ? HEAD_BOB_AMOUNT * 1.35 : HEAD_BOB_AMOUNT) * crouchScale;
+    const bobTarget = this.isMoving ? Math.sin(this.headBobPhase) * bobAmount : 0;
+    const rollTarget = this.isMoving
+      ? Math.sin(this.headBobPhase * 0.5) * (sprinting ? 0.035 : 0.02) * crouchScale
+      : 0;
+
+    const smooth = Math.min(1, dt * BOB_SMOOTH);
+    this.bobOffset += (bobTarget - this.bobOffset) * smooth;
+    this.bobRoll += (rollTarget - this.bobRoll) * smooth;
+    const roll = this.bobRoll;
+
+    // Always assigned, so a body that stops walking settles onto its own feet
+    // instead of hanging where the last half-wave left the eye.
+    this.position.y = this.groundHeight + this.currentHeight + this.bobOffset;
 
     // --- Footsteps --------------------------------------------------------
-    const travelled = Math.hypot(this.velocity.x, this.velocity.z) * dt;
-    this.stepAccumulator += travelled;
-    const stepDistance = sprinting ? STEP_DISTANCE_RUN : STEP_DISTANCE_WALK;
-    if (this.stepAccumulator >= stepDistance) {
-      this.stepAccumulator = 0;
-      this.onFootstep?.(sprinting);
+    // Cadence on a clock, so the stride sounds the same at 30 fps and at 120.
+    if (this.isMoving) {
+      this.stepTimer += dt;
+      const interval = sprinting ? STEP_RUN_INTERVAL : STEP_WALK_INTERVAL;
+      if (this.stepTimer >= interval) {
+        this.stepTimer = 0;
+        this.onFootstep?.(sprinting);
+      }
+    } else {
+      // Standing still: the first step of the next walk lands on the heel of
+      // a stride already underway, not on the instant the stick is touched.
+      this.stepTimer = STEP_WALK_INTERVAL * 0.55;
     }
 
     // --- Camera -----------------------------------------------------------
