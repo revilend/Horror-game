@@ -172,7 +172,16 @@ function base(kind: InteractableKind, group: THREE.Group): Interactable {
 export function createLightSwitch(mats: InteractableMaterials): Interactable {
   const prop = base('switch', new THREE.Group());
 
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.28, 0.035), mats.plastic);
+  // The plate carries a trace of its own glow, because the rooms start dark and
+  // a black plate on a black wall is something the player walks straight past.
+  const plateMaterial = new THREE.MeshStandardMaterial({
+    color: 0x2c3034,
+    emissive: 0x8fa4b8,
+    emissiveIntensity: 0.24,
+    roughness: 0.55,
+    metalness: 0.25,
+  });
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 0.035), plateMaterial);
   plate.position.y = 1.26;
   prop.group.add(plate);
 
@@ -184,6 +193,17 @@ export function createLightSwitch(mats: InteractableMaterials): Interactable {
   hinge.add(nub);
   prop.group.add(hinge);
   prop.hinge = hinge;
+
+  // The tell: a strip of lit amber glass below the toggle. It is the prop's
+  // `panel`, so it comes up with the room's tubes and reads as ON from across
+  // the corridor, and goes out again when the switch is turned back off.
+  const indicator = new THREE.Mesh(
+    new THREE.BoxGeometry(0.11, 0.026, 0.014),
+    emissiveMaterial(0xffb44a, 0),
+  );
+  indicator.position.set(0, 1.07, 0.026);
+  prop.group.add(indicator);
+  prop.panel = indicator.material as THREE.MeshStandardMaterial;
 
   return prop;
 }

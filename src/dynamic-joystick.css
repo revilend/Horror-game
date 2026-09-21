@@ -16,30 +16,41 @@
 }
 
 #dynamic-joystick.active {
-  opacity: 0.9;
+  opacity: 0.95;
   pointer-events: auto;
 }
 
+/* A faceplate rather than a wire ring: darker in the middle so the thumb sits
+   in a hole, with the amber edge of the asylum's signage around it. */
 #dj-base {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: rgba(20, 20, 30, 0.55);
-  border: 3px solid rgba(255, 200, 120, 0.75);
-  box-shadow: 0 0 22px rgba(255, 171, 46, 0.35), inset 0 0 16px rgba(255, 255, 255, 0.05);
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(8, 8, 12, 0.5) 0 34%,
+    rgba(28, 26, 22, 0.42) 62%,
+    rgba(10, 10, 14, 0.6) 100%
+  );
+  border: 2px solid rgba(255, 200, 120, 0.7);
+  box-shadow: 0 0 26px rgba(255, 171, 46, 0.26), inset 0 0 22px rgba(0, 0, 0, 0.55);
 }
 
 #dj-stick {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 46px;
-  height: 46px;
-  margin-left: -23px;
-  margin-top: -23px;
+  width: 50px;
+  height: 50px;
+  margin-left: -25px;
+  margin-top: -25px;
   border-radius: 50%;
-  background: rgba(255, 220, 160, 0.55);
-  border: 3px solid rgba(255, 200, 120, 0.8);
-  box-shadow: 0 0 14px rgba(255, 171, 46, 0.4);
+  background: radial-gradient(
+    circle at 42% 34%,
+    rgba(255, 240, 208, 0.85),
+    rgba(255, 186, 106, 0.5) 70%
+  );
+  border: 2px solid rgba(255, 205, 130, 0.85);
+  box-shadow: 0 0 18px rgba(255, 171, 46, 0.45);
   will-change: transform;
 }

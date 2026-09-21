@@ -116,14 +116,14 @@ const UI: Record<string, Localized> = {
   'menu.quality.high': { uz: 'Yuqori', en: 'High', ru: 'Высокое' },
   'menu.bestTime': { uz: 'Eng yaxshi vaqt', en: 'Best time', ru: 'Лучшее время' },
   'menu.controls': {
-    uz: 'WASD — harakat · SHIFT — yugurish · E — olish · B — shisha otish · C — egilish · F — chiroq · M — xarita',
-    en: 'WASD — move · SHIFT — run · E — take · B — throw bottle · C — crouch · F — flashlight · M — map',
-    ru: 'WASD — движение · SHIFT — бег · E — взять · B — бросить бутылку · C — присесть · F — фонарь · M — карта',
+    uz: 'WASD — harakat · SHIFT — yugurish · E — olish/ochish/yashirinish · B — shisha otish · C — egilish · F — chiroq · M — xarita',
+    en: 'WASD — move · SHIFT — run · E — take, open, hide · B — throw bottle · C — crouch · F — flashlight · M — map',
+    ru: 'WASD — движение · SHIFT — бег · E — взять, открыть, спрятаться · B — бросить бутылку · C — присесть · F — фонарь · M — карта',
   },
   'menu.controlsTouch': {
-    uz: 'Chap barmoq — yurish · O‘ng barmoq — qarash · Tugmalar: qo‘l, egilish, chiroq, yugurish',
-    en: 'Left thumb — move · Right thumb — look · Buttons: hand, crouch, light, run',
-    ru: 'Левый палец — движение · Правый палец — обзор · Кнопки: рука, присесть, фонарь, бег',
+    uz: 'Chap barmoq — yurish · O‘ng barmoq — qarash · Qo‘l tugmasi: olish, eshik, tortma, shkafga yashirinish · Yugurish, chiroq va shisha tugmalari',
+    en: 'Left thumb — move · Right thumb — look · Hand button: take, open, hide in a locker · Run, light and bottle buttons',
+    ru: 'Левый палец — движение · Правый палец — обзор · Кнопка руки: взять, открыть, спрятаться в шкафу · Кнопки бега, фонаря и бутылки',
   },
 
   /* ---- rotate to landscape ---- */

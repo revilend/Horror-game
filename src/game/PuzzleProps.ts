@@ -561,19 +561,48 @@ export function createTrashBin(metal: THREE.Material): THREE.Group {
   return group;
 }
 
-/** Locker — tall metal storage unit (corridor/hiding spot). */
+/**
+ * Steel supply cabinet - two doors on legs.
+ *
+ * Deliberately a different silhouette from the tall single-door wardrobes the
+ * player can climb into: those are the only lockers in the building that open,
+ * and a decoration that looks exactly like one is what made "can I hide in
+ * this?" a question the player could not answer by looking. A supply cabinet
+ * squats on legs and is plainly too short to stand in.
+ */
 export function createLockerProp(
   metal: THREE.Material,
   rust: THREE.Material
 ): THREE.Group {
   const group = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 2.0, 0.5), metal);
-  body.position.y = 1.0;
+  const W = 1.0;
+  const H = 1.42;
+  const D = 0.42;
+  const base = 0.24;
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), metal);
+  body.position.y = base + H / 2;
   group.add(body);
-  // Handle
-  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.15, 0.03), rust);
-  handle.position.set(0.22, 1.2, 0.26);
-  group.add(handle);
+
+  // Two doors with a seam down the middle and a handle either side of it.
+  for (const side of [-1, 1]) {
+    const door = new THREE.Mesh(new THREE.BoxGeometry(W / 2 - 0.05, H - 0.12, 0.035), metal);
+    door.position.set(side * (W / 4 - 0.005), base + H / 2, D / 2 + 0.018);
+    group.add(door);
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.16, 0.04), rust);
+    handle.position.set(side * 0.08, base + H / 2, D / 2 + 0.055);
+    group.add(handle);
+  }
+
+  // Angle-iron legs, so it reads as a fixture rather than a ward wardrobe.
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.07, base, 0.07), rust);
+      leg.position.set(sx * (W / 2 - 0.08), base / 2, sz * (D / 2 - 0.08));
+      group.add(leg);
+    }
+  }
+
   shadowAll(group);
   return group;
 }

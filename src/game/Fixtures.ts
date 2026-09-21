@@ -480,6 +480,22 @@ export function createHideLocker(
   handle.position.set(W - wall - 0.1, H / 2, 0.08);
   door.add(handle);
 
+  // A lamp strip over the latch. Only the wardrobes that can actually be
+  // climbed into carry one, so the amber bar in the torch beam is the answer
+  // to "is this a hiding place?" - the supply cabinets around it have none.
+  const badge = new THREE.Mesh(
+    new THREE.BoxGeometry(0.26, 0.06, 0.02),
+    new THREE.MeshStandardMaterial({
+      color: 0x2b2415,
+      emissive: 0xffb146,
+      emissiveIntensity: 0.8,
+      roughness: 0.5,
+      metalness: 0.2,
+    }),
+  );
+  badge.position.set(W - wall - 0.1, H / 2 + 0.24, 0.06);
+  door.add(badge);
+
   door.position.set(-W / 2 + wall / 2, 0, D / 2 - 0.02);
   group.add(door);
   shadowAll(group);

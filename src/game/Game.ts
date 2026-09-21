@@ -781,11 +781,25 @@ export class Game {
 
     // The reaching hand. Fires on pointerdown so it responds instantly, and it
     // never sticks because there is no held state to get out of sync.
+    //
+    // Two listeners end up on this button - this one and the one
+    // installFixtures() binds - and between them exactly one has to act per
+    // press. So the two conditions are made mutually exclusive: fixtures are
+    // left entirely to that listener, and this one only ever handles a pickup,
+    // the breaker or a boarded doorway, or ducking behind a gurney when there
+    // is nothing to work at all. Both acting on one press is what used to open
+    // a door and shut it again, and let a player into a locker only to walk
+    // them straight back out of it.
     const handButton = document.getElementById('hand-btn');
     handButton?.addEventListener('pointerdown', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      this.interact();
+
+      if (this.interaction !== null) {
+        this.interact();
+        return;
+      }
+      if (this.fixtureTarget) return;
     });
 
     // The thrown vial. Same instant-response contract as the hand button.
@@ -794,20 +808,6 @@ export class Game {
       event.stopPropagation();
       this.throwBestGlass();
     });
-
-    // Crouch button uses pointerdown/pointerup so it does not stick
-    const crouchButton = document.getElementById('crouch-btn');
-    crouchButton?.addEventListener('pointerdown', (event) => {
-      event.preventDefault();
-      this.player?.setCrouching(true);
-      crouchButton.classList.add('active');
-    });
-    for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) {
-      crouchButton?.addEventListener(type, () => {
-        this.player?.setCrouching(false);
-        crouchButton.classList.remove('active');
-      });
-    }
 
     document.addEventListener('keydown', (event) => {
     if (event.code === 'KeyF' && this.state === 'playing') this.toggleFlashlight();
