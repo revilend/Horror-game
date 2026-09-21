@@ -14,6 +14,15 @@ const RAIN_COUNT = 2200;
 const RAIN_RADIUS = 22;
 const RAIN_HEIGHT = 18;
 
+/** Where a room's ceiling light hangs, and how far it is worth carrying. */
+interface RoomLightPlacement {
+  x: number;
+  y: number;
+  z: number;
+  /** Past this the room is too far away to be given one of the pool lights. */
+  cullRadius: number;
+}
+
 /**
  * Atmosphere layer: flickering lights, drifting dust, fog that thickens as the
  * player collects keys or gets hunted, and random horror beats.
@@ -29,6 +38,28 @@ export class HorrorEffects {
   private ambientFloor = 0;
   private flickerLights: THREE.PointLight[] = [];
   private fluorescents: THREE.MeshStandardMaterial[] = [];
+
+  /**
+   * The room ceiling lights.
+   *
+   * three compiles a material against the *number* of lights it can see, so
+   * adding or removing one at runtime recompiles every material on screen - a
+   * visible hitch, and the opposite of what throwing a switch should feel
+   * like. So a fixed handful of ceiling lights is built once and left in the
+   * scene for the whole run at a constant count. Each frame they are handed to
+   * the lit rooms nearest the player; a room nobody is near simply does not get
+   * one. However many switches are up, the price of the lighting never moves.
+   */
+  private roomLights: THREE.PointLight[] = [];
+  /** Every room's ceiling rose, whether its switch is up or not. */
+  private roomPlacements = new Map<number, RoomLightPlacement>();
+  /** The rooms whose switches are currently on. */
+  private litRooms = new Map<number, RoomLightPlacement & { flickerEnd: number }>();
+  /** Scratch queue of the lit rooms nearest the player, nearest first. */
+  private roomLightQueue: Array<{ room: RoomLightPlacement & { flickerEnd: number } }> = [];
+
+  /** The steady intensity a struck tube settles at. */
+  private static readonly ROOM_LIGHT_INTENSITY = 1.8;
   private fogDensity = 0.035;
   private danger = 0;
   /** 0 = hospital is dead, 1 = emergency power restored */
@@ -125,16 +156,44 @@ export class HorrorEffects {
   }
 
   /**
-   * Cuts or restores the wall lights around a point: what the switch on the
-   * wall actually does.
+   * The registered ceiling rose nearest a point, or -1 when none is close.
+   *
+   * A wall switch hangs on a wall cell, and a wall has no room of its own, so
+   * the light a plate is wired to is found by position: the rose nearest the
+   * plate is the room it lights.
+   */
+  private nearestRoomIndex(x: number, z: number, limit: number): number {
+    let best = -1;
+    let bestDistance = limit * limit;
+    for (const [index, room] of this.roomPlacements) {
+      const dx = room.x - x;
+      const dz = room.z - z;
+      const distance = dx * dx + dz * dz;
+      if (distance > bestDistance) continue;
+      bestDistance = distance;
+      best = index;
+    }
+    return best;
+  }
+
+  /**
+   * What the switch on the wall actually does.
+   *
+   * The room it is screwed to comes up first: its ceiling light stutters twice
+   * and then holds, which is what shows the player the ward they are standing
+   * in. The wall lamps within reach are cut or restored with it, so the
+   * corridor outside the door goes dark as well.
    *
    * Every flicker light re-derives its intensity from `userData.baseIntensity`
-   * each frame, so zeroing that field is what takes a room dark and putting it
+   * each frame, so zeroing that field is what takes a lamp dark and putting it
    * back is what relights it. The counter is there because two switches can
    * cover the same corridor: the last one to be flipped off is the one that
    * has to be flipped back on before the tube comes up again.
    */
   setLightsAround(x: number, z: number, radius: number, on: boolean): void {
+    const roomIndex = this.nearestRoomIndex(x, z, radius + 8);
+    if (roomIndex >= 0) this.setRoomLight(roomIndex, on);
+
     const radiusSq = radius * radius;
     for (const light of this.flickerLights) {
       const dx = light.position.x - x;
@@ -155,6 +214,104 @@ export class HorrorEffects {
         light.userData.baseIntensity = 0;
         light.intensity = 0;
       }
+    }
+  }
+
+  /**
+   * Installs the fixed pool of room ceiling lights, all of them dark.
+   *
+   * Called once per run, after the level is built: the pool is what the wall
+   * switches borrow from, and its size never changes, because a changing light
+   * count is what costs a recompile.
+   */
+  setRoomLightPool(lights: THREE.PointLight[]): void {
+    for (const light of this.roomLights) light.parent?.remove(light);
+    this.roomLights = [];
+    this.litRooms.clear();
+
+    for (const light of lights) {
+      light.intensity = 0;
+      light.distance = 10;
+      this.roomLights.push(light);
+      this.scene.add(light);
+    }
+  }
+
+  /** Records where a room's ceiling light hangs, so its switch can find it. */
+  registerRoomLight(roomIndex: number, x: number, y: number, z: number, cullRadius: number): void {
+    this.roomPlacements.set(roomIndex, { x, y, z, cullRadius });
+  }
+
+  /**
+   * Throws the switch on one room's ceiling light: the tube stutters, then
+   * settles. Returns false when that room has no light of its own, so a switch
+   * standing in a corridor can fall back to the wall lamps around it.
+   */
+  setRoomLight(roomIndex: number, on: boolean): boolean {
+    const placement = this.roomPlacements.get(roomIndex);
+    if (!placement) return false;
+
+    if (on) {
+      // About two fast stutters before the tube catches: nothing fluorescent
+      // ever comes up clean.
+      this.litRooms.set(roomIndex, { ...placement, flickerEnd: performance.now() + 320 });
+    } else {
+      this.litRooms.delete(roomIndex);
+    }
+    return true;
+  }
+
+  /**
+   * Hands the pool to the lit rooms nearest the player, then runs each light:
+   * the stutter of a striking tube, then a steady glow.
+   */
+  private updateRoomLights(dt: number, camera: THREE.Camera | null): void {
+    const pool = this.roomLights;
+    if (pool.length === 0) return;
+
+    const camX = camera ? camera.position.x : 0;
+    const camZ = camera ? camera.position.z : 0;
+
+    // Nearest lit rooms first, into a queue no longer than the pool itself.
+    const queue = this.roomLightQueue;
+    queue.length = 0;
+    for (const room of this.litRooms.values()) {
+      const dx = room.x - camX;
+      const dz = room.z - camZ;
+      const distance = dx * dx + dz * dz;
+      // Outside its own room's reach: this one is not drawn at all.
+      if (distance > room.cullRadius * room.cullRadius) continue;
+
+      let at = queue.length;
+      while (at > 0) {
+        const other = queue[at - 1].room;
+        const ox = other.x - camX;
+        const oz = other.z - camZ;
+        if (ox * ox + oz * oz <= distance) break;
+        at--;
+      }
+      if (at >= pool.length) continue;
+      if (queue.length === pool.length) queue.pop();
+      queue.splice(at, 0, { room });
+    }
+
+    const nowMs = performance.now();
+    for (let i = 0; i < pool.length; i++) {
+      const light = pool[i];
+      const entry = queue[i];
+      if (!entry) {
+        // Idle member of the pool: parked, and giving nothing away.
+        if (light.intensity !== 0) light.intensity = 0;
+        continue;
+      }
+
+      light.position.set(entry.room.x, entry.room.y, entry.room.z);
+      if (nowMs < entry.room.flickerEnd) {
+        const phase = Math.floor((entry.room.flickerEnd - nowMs) / 80);
+        light.intensity = phase % 2 === 0 ? 0.25 : 2.6;
+        continue;
+      }
+      light.intensity += (HorrorEffects.ROOM_LIGHT_INTENSITY - light.intensity) * Math.min(1, dt * 6);
     }
   }
 
@@ -365,6 +522,9 @@ export class HorrorEffects {
         material.emissiveIntensity += (tubeBase - material.emissiveIntensity) * dt * 6;
       }
     }
+
+    // --- Room ceiling lights ---------------------------------------------
+    this.updateRoomLights(dt, camera);
 
     // --- Fog: darkness, tension and danger all thicken it -----------------
     // Outside, the fog thins out and turns a wet blue-grey so the yard reads.
@@ -724,6 +884,13 @@ export class HorrorEffects {
       light.parent?.remove(light);
     }
     this.flickerLights = [];
+    // The room lights and the rooms they belonged to went with that scene too.
+    for (const light of this.roomLights) {
+      light.parent?.remove(light);
+    }
+    this.roomLights = [];
+    this.roomPlacements.clear();
+    this.litRooms.clear();
     this.fluorescents = [];
     this.ambientLight.intensity = 1.0;
     this.ambientLight.color.set(0x3d4a5c);

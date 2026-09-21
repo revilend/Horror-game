@@ -114,6 +114,16 @@ const FIXTURE_RADIUS = 30;
 /** How close you have to be before a prompt appears. */
 const REACH = 2.3;
 
+/**
+ * How many room ceiling lights exist at once.
+ *
+ * The pool is deliberately fixed: three sizes its shaders to the number of
+ * lights in view, so the count must never change at runtime or every material
+ * on screen recompiles. Four covers every room the player can see from one
+ * spot - and the rest of the building is dark whichever switches are up.
+ */
+const ROOM_LIGHT_POOL = 4;
+
 type GameState = 'loading' | 'menu' | 'playing' | 'paused' | 'jumpscare' | 'gameover' | 'win';
 type Quality = 'low' | 'medium' | 'high';
 /** Story progression: restore power, then find the keys, then run for the door. */
@@ -640,49 +650,90 @@ export class Game {
       light.distance = 10;
       this.effects.addFlickerLight(light, 0.72);
     }
+
+    this.addRoomLights();
   }
 
   /**
-   * Distinct coloured lights inside key rooms so every floor feels unique.
-   * Only the rooms closest to the player are lit, keeping the draw budget low.
+   * The room ceiling lights, and the roses their wall switches throw.
+   *
+   * Nothing here is lit at boot: each room's switch has to be found and used,
+   * and even then only the rooms around the player are actually given one of
+   * the pool lights. A dark building of forty rooms therefore costs exactly as
+   * much as a dark corridor.
    */
-  private addRoomThemes(): void {
+  private addRoomLights(): void {
     if (!this.mapInfo || !this.effects) return;
-    const CELL = 4;
 
-    // [roomKey, colourHex, radius]
-    const themes: Array<[string, number, number]> = [
-      ['h', 0x55ffaa, 9],   // Operating Theatre — sickly green
-      ['o', 0x4499ff, 8],   // Morgue — cold blue
-      ['O', 0x4499ff, 8],   // Morgue 2 (B1) — cold blue
-      ['A', 0xffaa33, 8],   // Chief Surgeon — warm amber
-      ['M', 0xff2222, 10],  // Boiler Room — pulsing red
-      ['q', 0xcccccc, 7],   // Shower Room — stark white
-      ['Q', 0x6633cc, 8],   // Incubator Room — eerie violet
-      ['S', 0xff4444, 8],   // Isolation Ward — danger red
-      ['G', 0x88ccff, 7],   // Physiotherapy — cool blue
-      ['T', 0xff6600, 8],   // Electotherapy — electric orange
-      ['U', 0x44dddd, 7],   // Hydrotherapy — teal
-      ['X', 0xffdd44, 6],   // Roof Access — warm yellow
-    ];
-
-    for (const [key, colour, radius] of themes) {
-      // Find the room's centre in world coords
-      const meta = this.mapInfo.rooms.find((r) => r.key === key);
-      if (!meta) continue;
-      const cx = ((meta.col1 + meta.col2) / 2) * CELL;
-      const cz = ((meta.row1 + meta.row2) / 2) * CELL;
-      const light = this.effects.createWallLight(cx, 2.8, cz, colour);
-      light.distance = radius;
-      this.effects.addFlickerLight(light, 0.4);
-      this.scene?.add(light);
+    const pool: THREE.PointLight[] = [];
+    for (let i = 0; i < ROOM_LIGHT_POOL; i++) {
+      // Parked far below the building until a room claims it.
+      pool.push(this.effects.createWallLight(0, -40, 0, 0xfff4e0));
     }
+    this.effects.setRoomLightPool(pool);
+
+    this.mapInfo.rooms.forEach((room, index) => {
+      const cx = ((room.col1 + room.col2) / 2) * CELL;
+      const cz = ((room.row1 + room.row2) / 2) * CELL;
+      const span = Math.max(room.col2 - room.col1, room.row2 - room.row1) * CELL;
+      // One room plus its doorway: past that the light is not drawn at all.
+      this.effects?.registerRoomLight(index, cx, floorY(room.row1) + 2.7, cz, span / 2 + 9);
+    });
   }
 
   /**
    * The yard's lamp posts. Wired up only once the substation is thrown, so the
    * light count in the forward renderer stays low for most of the run.
    */
+  /**
+   * Sets one scattered item down on the floor of the band it landed in.
+   *
+   * The scatter works in plan cells, so a pickup knows nothing about how tall
+   * it is, and a ward key and a car battery were both left hovering at waist
+   * height. Each one is measured instead and lowered until its lowest point
+   * just touches the floor - and keys and papers are laid flat first, so what
+   * the torch finds is a thing lying on the ground rather than a marker in the
+   * air.
+   */
+  private settleItem(object: THREE.Object3D): void {
+    if (object.userData.isKey) {
+      // Turn about the vertical axis first: a key that has been laid flat then
+      // spins on the floor instead of tumbling over its own ring.
+      object.rotation.order = 'YXZ';
+      object.rotation.x = Math.PI / 2;
+    } else if (object.userData.isNote) {
+      object.rotation.x = -Math.PI / 2;
+    }
+
+    const row = Math.round(object.position.z / CELL);
+    const box = new THREE.Box3().setFromObject(object);
+    object.position.y += floorY(row) + 0.02 - box.min.y;
+    object.userData.restY = object.position.y;
+  }
+
+  /**
+   * Keeps whatever is still lying around turning so the torch catches it -
+   * on the floor, never above it.
+   *
+   * An item is settled the first time it is seen, and again after a restart
+   * has rebuilt the level, because the scatter deals a fresh set of cells and
+   * fresh meshes every run.
+   */
+  private animateLooseItems(dt: number): void {
+    for (const pickup of this.pickups) {
+      const object = pickup.object;
+      if (typeof object.userData.restY !== 'number') this.settleItem(object);
+      const restY = object.userData.restY as number;
+
+      if (pickup.kind !== 'item') {
+        object.position.y = restY;
+        continue;
+      }
+      object.rotation.y += dt * (pickup.item === 'key' ? 1.5 : 1.1);
+      object.position.y = restY;
+    }
+  }
+
   private lightOutdoorLamps(): void {
     if (!this.mapInfo || !this.effects || this.outdoorLights.length > 0) return;
 
@@ -1406,7 +1457,7 @@ export class Game {
     this.updateZone();
     this.updateBattery(dt);
     this.updateDanger(dt);
-    this.animatePickups(dt);
+    this.animateLooseItems(dt);
     this.animateGate(dt);
     this.updateHUD();
     // Corrected right after the HUD: it disables the hand button whenever no
@@ -1497,6 +1548,7 @@ export class Game {
    * door it cannot open. Running ahead of the fixture pass also means the leaf
    * already has a head start by the time the player sees it move.
    */
+  /** Swings every door leaf that is on its way open or shut. */
   private updateDoors(dt: number): void {
     void dt;
     const monster = this.monster?.currentPosition;
