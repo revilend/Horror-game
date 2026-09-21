@@ -682,10 +682,6 @@ export class Game {
   }
 
   /**
-   * The yard's lamp posts. Wired up only once the substation is thrown, so the
-   * light count in the forward renderer stays low for most of the run.
-   */
-  /**
    * Sets one scattered item down on the floor of the band it landed in.
    *
    * The scatter works in plan cells, so a pickup knows nothing about how tall
@@ -734,6 +730,10 @@ export class Game {
     }
   }
 
+  /**
+   * The yard's lamp posts. Wired up only once the substation is thrown, so the
+   * light count in the forward renderer stays low for most of the run.
+   */
   private lightOutdoorLamps(): void {
     if (!this.mapInfo || !this.effects || this.outdoorLights.length > 0) return;
 
