@@ -1676,8 +1676,17 @@ body.touch-device #rotate-overlay:not(.hidden) {
 .touch-only { display: none; }
 body.touch-device .touch-only { display: block; }
 body.touch-device .menu-controls:not(.touch-only) { display: none; }
-/* The keyboard keycap makes no sense on a phone, which has the hand button. */
-body.touch-device .interact-key { display: none; }
+/*
+ * On a phone both action captions are desktop furniture: the keycap names a
+ * key that does not exist, and the line of text only repeats what the glowing
+ * hand button already says. So neither is drawn there - the hand does the
+ * work, and anything that is refused still explains itself in the HUD message
+ * line above.
+ */
+body.touch-device #interact-prompt,
+body.touch-device #fixture-prompt {
+  display: none;
+}
 
 /* ===== LANDSCAPE / SHORT VIEWPORT TUNING ===== */
 @media (orientation: landscape) and (max-height: 560px) {
