@@ -25,8 +25,109 @@ export class HorrorAudio {
   private tapGain: GainNode | null = null;
   private staticSource: AudioBufferSourceNode | null = null;
   private staticGain: GainNode | null = null;
+  /**
+   * The radio's broadcast: the tinny waltz under the static.
+   *
+   * Static on its own reads as a broken prop; a few notes of something jaunty
+   * coming out of it is what makes a radio sound *switched on* - and it is the
+   * noise the creature follows, so it has to carry.
+   */
+  private radioGain: GainNode | null = null;
+  private radioTimer: number | null = null;
+  private radioStep = 0;
   private isInitialized = false;
   private ambienceRunning = false;
+
+  /* -------------------------------------------------------------------
+   * The valve radio
+   *
+   * Static on its own reads as a broken prop. A few bars of something jaunty
+   * coming out of it is what makes a radio sound switched on - and it is that
+   * noise, not the hiss, that the creature follows.
+   * ----------------------------------------------------------------- */
+
+  /** The broadcast riding under the static, switched on with the set. */
+  setRadioBroadcast(playing: boolean): void {
+    if (!this.ctx || !this.masterGain) return;
+
+    if (!this.radioGain) {
+      this.radioGain = this.ctx.createGain();
+      this.radioGain.gain.value = 0;
+      // A speaker the size of a fist: everything outside the mid-range goes.
+      const cone = this.ctx.createBiquadFilter();
+      cone.type = 'bandpass';
+      cone.frequency.value = 1150;
+      cone.Q.value = 0.9;
+      this.radioGain.connect(cone);
+      cone.connect(this.masterGain);
+    }
+
+    this.radioGain.gain.setTargetAtTime(
+      playing ? 0.5 : 0,
+      this.ctx.currentTime,
+      playing ? 0.25 : 0.4,
+    );
+
+    if (playing) {
+      if (this.radioTimer === null) this.scheduleRadioNote();
+      return;
+    }
+    if (this.radioTimer !== null) {
+      window.clearTimeout(this.radioTimer);
+      this.radioTimer = null;
+    }
+  }
+
+  /**
+   * One note of the broadcast, with the next one queued behind it.
+   *
+   * Scheduled a note at a time rather than looped from a buffer, because the
+   * melody is the thing the player hears change when the set is switched on,
+   * and eight notes on a two-second loop read as a stuck record.
+   */
+  private scheduleRadioNote(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.radioGain) {
+      this.radioTimer = null;
+      return;
+    }
+
+    // G major in a slow three: what a hospital radio played at two in the
+    // morning in 1987.
+    const melody = [0, 4, 7, 4, 2, 5, 9, 5];
+    const step = this.radioStep++ % melody.length;
+    const now = ctx.currentTime;
+
+    const voice = ctx.createOscillator();
+    voice.type = 'triangle';
+    voice.frequency.value = 196 * Math.pow(2, melody[step] / 12);
+
+    // Valve warmth: a second, quieter voice a fifth above the first.
+    const harmony = ctx.createOscillator();
+    harmony.type = 'sine';
+    harmony.frequency.value = 196 * Math.pow(2, (melody[step] + 7) / 12);
+    const harmonyGain = ctx.createGain();
+    harmonyGain.gain.value = 0.35;
+
+    const envelope = ctx.createGain();
+    envelope.gain.value = 0;
+    envelope.gain.setTargetAtTime(0.6, now, 0.03);
+    envelope.gain.setTargetAtTime(0, now + 0.32, 0.16);
+
+    voice.connect(envelope);
+    harmony.connect(harmonyGain);
+    harmonyGain.connect(envelope);
+    envelope.connect(this.radioGain);
+
+    voice.start(now);
+    harmony.start(now);
+    voice.stop(now + 0.75);
+    harmony.stop(now + 0.75);
+
+    // A bar of three, a breath at the end of it, and the set plays on.
+    const beat = step % 3 === 2 ? 620 : 440;
+    this.radioTimer = window.setTimeout(() => this.scheduleRadioNote(), beat);
+  }
   /**
    * One second of white noise, built once and reused by every footfall.
    *

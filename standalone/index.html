@@ -23,8 +23,8 @@
   <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png" />
   <link rel="manifest" href="./manifest.webmanifest" />
-  <script type="module" crossorigin src="./assets/index-BAg4pvko.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-COmIAaP_.css">
+  <script type="module" crossorigin src="./assets/index-DkHKJrrh.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-XpgvIXP4.css">
 </head>
 <body class="unbooted">
   <div id="loading-screen">
@@ -134,6 +134,8 @@
   <div id="scanlines"></div>
   <div id="vhs-tracking"></div>
   <div id="grain"></div>
+  <!-- Violet cast while the UV lamp is burning (see Letters.ts) -->
+  <div id="uv-wash"></div>
 
   <div id="game-hud" class="hidden">
     <div class="hud-top">
@@ -259,6 +261,34 @@
   </div>
 
   <div id="minimap-panel"></div>
+
+  <!--
+    The letter reader.
+
+    The five archive letters are readable documents, not pickups that flash a
+    line of text: a sheet of stained 1987 asylum paper, with its heading, the
+    date it was written and a wax-sealed button at the foot. It sits above
+    everything else, and it is dismissed by the button, by a tap anywhere on
+    the sheet, by [ACTION] or by [ESC].
+  -->
+  <div id="letter-reader" class="hidden">
+    <article class="letter-sheet" id="letter-sheet" role="dialog" aria-modal="true" aria-labelledby="letter-title">
+      <header class="letter-head">
+        <span class="letter-stamp" data-i18n="letter.stamp"></span>
+        <span class="letter-count" id="letter-count"></span>
+      </header>
+      <h2 class="letter-title" id="letter-title"></h2>
+      <div class="letter-date" id="letter-date"></div>
+      <p class="letter-body" id="letter-body"></p>
+      <footer class="letter-foot">
+        <button id="letter-close" class="wax-seal letter-seal" type="button">
+          <span class="wax-seal-ring"></span>
+          <span class="wax-seal-text" data-i18n="letter.close"></span>
+        </button>
+        <span class="letter-hint" data-i18n="letter.closeHint"></span>
+      </footer>
+    </article>
+  </div>
 
   <!-- Landscape-only guard for phones turned the wrong way -->
   <div id="rotate-overlay" class="hidden">

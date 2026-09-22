@@ -61,7 +61,10 @@ import {
   type Lang,
   type Localized,
 } from './i18n';
-import { NOTES } from './notes';
+// Everything readable, notes first and the five archive letters after them, so
+// one index can describe a page of Ren's journal or a letter off a ward floor.
+import { LETTER_INDEX_OFFSET, LETTERS, READABLES as NOTES } from './notes';
+import { placeArchiveLetters } from './Letters';
 
 /** A pickup lying in the world, waiting to be taken by hand. */
 interface PickupRecord {
@@ -150,7 +153,12 @@ const TOTAL_KEYS = 3;
 const FUSES_TO_POWER = 2;
 /** The deck index of the clinic lobby - where the reception desk stands. */
 const CLINIC_DECK = 1;
-const TOTAL_NOTES = 20;
+// Twenty scattered notes plus the five archive letters: every document in the
+// asylum is worth reading, so the counter counts all of them.
+const TOTAL_NOTES = NOTES.length;
+
+/** How long a charge of the UV lamp lasts, in seconds. */
+const UV_LAMP_SECONDS = 25;
 const BATTERY_DRAIN = 0.4;
 const BATTERY_RECOVER = 2.4;
 
@@ -310,6 +318,322 @@ export class Game {
   private lightningTimeout: number | null = null;
   private objectiveText: HTMLElement | null = null;
   private noteCount: HTMLElement | null = null;
+
+  // --- The archive: five letters and a UV lamp ----------------------------
+  /** The level the letters were laid into, so a rebuild can be spotted. */
+  private archiveMap: MapInfo | null = null;
+  /** The letter sheets still on the floor, with the page each one carries. */
+  private letterSheets: Array<{ index: number; mesh: THREE.Object3D }> = [];
+  /** Shared paper material, so the UV lamp can make every sheet blaze. */
+  private letterPaper: THREE.MeshStandardMaterial | null = null;
+  /** Letters already read, so one is never handed over twice. */
+  private readonly letterRead = new Set<number>();
+  /** True while a sheet is open; the world is held still (see gameLoop). */
+  private letterReaderOpen = false;
+  private letterReader: HTMLElement | null = null;
+  private letterReaderTitle: HTMLElement | null = null;
+  private letterReaderDate: HTMLElement | null = null;
+  private letterReaderBody: HTMLElement | null = null;
+  private letterReaderCount: HTMLElement | null = null;
+  /** The UV lamp's violet wash, and how long it has left to burn. */
+  private uvWash: HTMLElement | null = null;
+  private uvTimer = 0;
+  /** Marks the UV lamp is holding on the corner map right now. */
+  private readonly archiveMarks: MinimapState['marks'] = [];
+  /** Throttle for the prop scan that sets the radio and barricade flags. */
+  private archiveTimer = 0;
+  private radioPlaying = false;
+  /** The objective line: shown when it changes, then put away again. */
+  private objectiveSeen = '';
+  private objectiveTimeout: number | null = null;
+  /** The archive's own heartbeat, at ten beats a second. */
+  private archiveTicker: number | null = null;
+  /** The letter on the sheet right now, for the line shown when it closes. */
+  private letterOpen = -1;
+
+  /* ---------------------------------------------------------------------
+   * The archive
+   *
+   * Five letters, the UV lamp, and the small pieces of housekeeping that
+   * belong to them: the objective line putting itself away, the prop flags
+   * nothing else raises, and the lamp's violet quarter-hour.
+   *
+   * It runs on its own ticker rather than inside the render loop, for the same
+   * reason the checkpoint writes do: none of it is per-frame work. Ten beats a
+   * second is fast enough for a light switch and a sheet of paper, and it costs
+   * nothing on a phone that is already drawing a hospital.
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Lays the five archive letters and the UV lamp into the level.
+   *
+   * Called from `init()` before the pickups are collected - a letter has to be
+   * in the scene when the world is gathered, or the hand cannot take it - and
+   * again from the ticker whenever a restart has put a new map on the board.
+   * The restart path rebuilds the whole level without rebuilding this file, so
+   * the map's identity is the only honest signal that the letters are gone.
+   */
+  private installArchiveLetters(): void {
+    const scene = this.scene;
+    const map = this.mapInfo;
+    if (!scene || !map) return;
+
+    this.archiveMap = map;
+    this.letterRead.clear();
+
+    const placement = placeArchiveLetters(scene, map, (index) => {
+      // A run restored from a checkpoint must not lay out pages already read.
+      const done = this.noteTaken.has(LETTER_INDEX_OFFSET + index);
+      if (done) this.letterRead.add(index);
+      return done;
+    });
+
+    this.letterSheets = placement.sheets;
+    this.letterPaper = placement.paper;
+    this.setLetterGlow(false);
+    if (placement.sheets.length + this.letterRead.size < LETTERS.length) {
+      console.warn(
+        `[letters] laid out ${placement.sheets.length} of ${LETTERS.length} archive letters`,
+      );
+    }
+    this.startArchiveTicker();
+  }
+
+  /** Starts the archive's heartbeat once, and never twice. */
+  private startArchiveTicker(): void {
+    if (this.archiveTicker !== null) return;
+    this.archiveTicker = window.setInterval(() => {
+      // Only while the run is live: a paused or finished game must not burn
+      // the lamp's charge or move the objective line around.
+      if (this.state === 'playing') this.updateArchive(0.1);
+    }, 100);
+  }
+
+  /**
+   * Everything the archive has to keep an eye on, ten times a second.
+   */
+  private updateArchive(dt: number): void {
+    // A letter in hand holds the player still. The world carries on around
+    // them, but they cannot be caught mid-sentence and walk out of it bleeding.
+    if (this.letterReaderOpen) {
+      if (this.player) this.player.inputDisabled = true;
+      this.invulnerable = Math.max(this.invulnerable, 1.2);
+    }
+
+    // A fresh level means the letters were rebuilt with it: lay them out again
+    // and gather the new meshes, or the five sheets would be scenery.
+    if (this.mapInfo && this.mapInfo !== this.archiveMap) {
+      this.installArchiveLetters();
+      this.collectPickups();
+    }
+
+    // A run restored from a save file has letters marked read that were taken
+    // before this reader existed: catch the tally up with the save.
+    for (let index = 0; index < LETTERS.length; index++) {
+      if (this.noteTaken.has(LETTER_INDEX_OFFSET + index)) this.letterRead.add(index);
+    }
+
+    this.updateObjectiveLine();
+
+    // The UV lamp burns for a while, and then goes out on its own.
+    if (this.uvTimer > 0) {
+      this.uvTimer -= dt;
+      this.pushHiddenMarks();
+      if (this.uvTimer <= 0) {
+        this.uvTimer = 0;
+        this.setLetterGlow(false);
+        this.uvWash?.classList.remove('show');
+        this.showMessage(t('msg.uvOff'), 2400);
+      }
+    }
+
+    // Props that raise their own flags. Scanning the prop list instead of
+    // hooking into `useProp` keeps this section out of the middle of that
+    // switch, and it costs nothing: the players' own objects are already here.
+    this.archiveTimer -= dt;
+    if (this.archiveTimer > 0) return;
+    this.archiveTimer = 0.35;
+
+    const radioOn = this.props.some((prop) => prop.kind === 'radio' && prop.on);
+    if (radioOn !== this.radioPlaying) {
+      this.radioPlaying = radioOn;
+      // The broadcast is the half of the radio the player actually hears, and
+      // the half the creature follows.
+      this.audio?.setRadioBroadcast(radioOn);
+      if (radioOn) this.setQuestFlag({ radio: true });
+    }
+
+    if (!this.questFlags.barricade && this.props.some((prop) => prop.kind === 'cart' && prop.on)) {
+      this.setQuestFlag({ barricade: true });
+    }
+  }
+
+  /**
+   * The document the action button is about to pick up, or -1.
+   *
+   * Every page - the twenty scattered notes and the five archive letters -
+   * travels through the ordinary note pickup path, so this is what tells the
+   * game that the paper in reach is a document to be read, and which one.
+   */
+  private documentInReach(): number {
+    const target = this.interaction;
+    if (!target || target.kind !== 'pickup' || target.pickup.kind !== 'note') return -1;
+    return target.pickup.noteIndex;
+  }
+
+  /**
+   * Hands the player a document: a sheet of 1987 paper with its heading, the
+   * date it was written where it has one, and a wax seal to close it with.
+   *
+   * The five archive letters carry a date and the story's spine - so they are
+   * counted, remembered and marked off in the journal - while the twenty notes
+   * Ren left about the hospital are simply read.
+   */
+  private openDocument(index: number): void {
+    const entry = NOTES[index];
+    const reader = this.letterReader;
+    if (!entry || !reader) return;
+
+    const letterIndex = index - LETTER_INDEX_OFFSET;
+    const letter = letterIndex >= 0 ? LETTERS[letterIndex] : null;
+
+    this.letterReaderOpen = true;
+    this.letterOpen = letter ? letterIndex : -1;
+    // The world stops with the sheet: the player reads at their own pace, and
+    // picks the corridor back up when they are done with it.
+    if (this.player) this.player.inputDisabled = true;
+    if (this.player) this.player.setRunning(false);
+    if (letter) this.letterRead.add(letterIndex);
+
+    if (this.letterReaderTitle) this.letterReaderTitle.textContent = L(entry.title);
+    if (this.letterReaderDate) {
+      // Only a letter is dated; a note is just a page.
+      this.letterReaderDate.textContent = letter ? L(letter.date) : '';
+      this.letterReaderDate.classList.toggle('hidden', !letter);
+    }
+    if (this.letterReaderBody) this.letterReaderBody.textContent = L(entry.text);
+    if (this.letterReaderCount) {
+      this.letterReaderCount.textContent = letter
+        ? t('letter.found', { n: this.letterRead.size, total: LETTERS.length })
+        : t('note.found', { n: this.notesCollected, total: TOTAL_NOTES });
+    }
+
+    reader.classList.remove('hidden');
+    // The pickup flashed its one-line toast a frame ago; the sheet replaces it.
+    this.noteToast?.classList.remove('show');
+    this.interactPrompt?.classList.remove('show');
+    if (document.pointerLockElement) document.exitPointerLock();
+
+    if (letter) this.setQuestFlag({ letters: this.letterRead.size });
+    this.updateObjective();
+  }
+
+  /** Puts the document down. Safe to call when nothing is open. */
+  private closeLetter(): void {
+    if (!this.letterReaderOpen) return;
+    this.letterReaderOpen = false;
+    this.letterReader?.classList.add('hidden');
+    if (this.player) this.player.inputDisabled = false;
+
+    // Said out loud on the way out rather than under the sheet, which is the
+    // only place the player can actually read it.
+    const letter = LETTERS[this.letterOpen];
+    if (letter) {
+      const read = this.letterRead.size;
+      if (read >= LETTERS.length) this.showMessage(t('msg.letterAll'), 5200);
+      else {
+        this.showMessage(
+          t('msg.letterRead', { title: L(letter.title), n: read, total: LETTERS.length }),
+          3600,
+        );
+      }
+    }
+    this.letterOpen = -1;
+  }
+
+  /**
+   * The UV lamp.
+   *
+   * It opens nothing and unlocks nothing: what it does is turn the hospital
+   * over. The sheets still lying in it blaze, the corner map marks them, and a
+   * violet cast comes over the whole screen for as long as the charge lasts.
+   */
+  private useUvLamp(): void {
+    if (!this.inventory?.has('uv')) return;
+
+    if (this.uvTimer > 0) {
+      this.uvTimer = 0;
+      this.setLetterGlow(false);
+      this.uvWash?.classList.remove('show');
+      this.showMessage(t('msg.uvOff'), 2200);
+      return;
+    }
+
+    this.uvTimer = UV_LAMP_SECONDS;
+    this.setLetterGlow(true);
+    this.uvWash?.classList.add('show');
+    this.audio?.playElectricBuzz();
+    this.pushHiddenMarks();
+    this.setQuestFlag({ uv: true });
+    this.showMessage(t('msg.uvOn'), 4200);
+  }
+
+  /** Under the lamp the paper throws its own light; in the dark it only glows. */
+  private setLetterGlow(lit: boolean): void {
+    if (!this.letterPaper) return;
+    this.letterPaper.emissiveIntensity = lit ? 2.4 : 0.75;
+  }
+
+  /**
+   * What the lamp puts on the corner map: the archive letters, which the map
+   * does not mark on its own.
+   *
+   * The marks are written into the same state the map reads and taken back out
+   * on the next beat, so nothing accumulates in an array that lives all run.
+   */
+  private pushHiddenMarks(): void {
+    const list = this.minimapState.marks;
+    for (const mark of this.archiveMarks) {
+      const at = list.indexOf(mark);
+      if (at >= 0) list.splice(at, 1);
+    }
+    this.archiveMarks.length = 0;
+
+    for (const sheet of this.letterSheets) {
+      if (!sheet.mesh.parent) continue;
+      const mark = { x: sheet.mesh.position.x, z: sheet.mesh.position.z, kind: 'note' as const };
+      list.push(mark);
+      this.archiveMarks.push(mark);
+    }
+  }
+
+  /**
+   * The objective line shows itself when it changes, and puts itself away a few
+   * seconds later.
+   *
+   * It used to sit across the middle of the screen for the whole run, which
+   * turned a dark corridor into a paragraph. Tapping it brings it back.
+   */
+  private updateObjectiveLine(): void {
+    const element = this.objectiveText;
+    if (!element) return;
+    const text = element.textContent ?? '';
+    if (!text || text === this.objectiveSeen) return;
+    this.objectiveSeen = text;
+    this.revealObjective();
+  }
+
+  /** Brings the objective line back for a few more seconds. */
+  private revealObjective(): void {
+    const element = this.objectiveText;
+    if (!element) return;
+    element.classList.add('show');
+    if (this.objectiveTimeout) window.clearTimeout(this.objectiveTimeout);
+    this.objectiveTimeout = window.setTimeout(() => {
+      element.classList.remove('show');
+      this.objectiveTimeout = null;
+    }, 9000);
+  }
   private roomBanner: HTMLElement | null = null;
   private roomBannerName: HTMLElement | null = null;
   private roomBannerSubtitle: HTMLElement | null = null;
@@ -431,6 +755,9 @@ export class Game {
       throw buildErr;
     }
     this.bindFixtures();
+    // Before collectPickups(): the five letters have to be in the scene when
+    // the world's pickups are gathered, or the hand button cannot take them.
+    this.installArchiveLetters();
     this.currentFloor = floorAt(this.mapInfo.playerSpawn.z / CELL);
     if (this.liftLocationText) {
       this.liftLocationText.textContent = floorName(this.currentFloor);
@@ -511,7 +838,9 @@ export class Game {
     this.handButton = id('hand-btn') as HTMLButtonElement | null;
     this.continueButton = id('continue-btn') as HTMLButtonElement | null;
     this.inventory = new Inventory(id('inventory'), 8, id('inv-readout'));
-    this.inventory.onUse = (item) => this.useItem(item);
+    // The UV lamp is the one usable item that is not aimed at a prop: it
+    // changes how the world is read rather than what it does.
+    this.inventory.onUse = (item) => (item === 'uv' ? this.useUvLamp() : this.useItem(item));
     this.gameoverScreen = id('gameover-screen');
     this.winScreen = id('win-screen');
     this.pauseMenu = id('pause-menu');
@@ -519,6 +848,12 @@ export class Game {
     this.noteToast = id('note-toast');
     this.noteToastTitle = id('note-toast-title');
     this.noteToastText = id('note-toast-text');
+    this.letterReader = id('letter-reader');
+    this.letterReaderTitle = id('letter-title');
+    this.letterReaderDate = id('letter-date');
+    this.letterReaderBody = id('letter-body');
+    this.letterReaderCount = id('letter-count');
+    this.uvWash = id('uv-wash');
     this.dangerVignette = id('danger-vignette');
     this.damageFlash = id('damage-flash');
     this.lightningFlash = id('lightning-flash');
@@ -874,12 +1209,37 @@ export class Game {
       event.preventDefault();
       event.stopPropagation();
 
+      // A document in hand: the same button puts it down again.
+      if (this.letterReaderOpen) {
+        this.closeLetter();
+        return;
+      }
+
       if (this.interaction !== null) {
+        const document = this.documentInReach();
         this.interact();
+        if (document >= 0) this.openDocument(document);
         return;
       }
       if (this.fixtureTarget) return;
     });
+
+    // The letter sheet: its own seal, a tap on the paper, or [ACTION] / [ESC].
+    this.letterReader?.addEventListener('pointerdown', () => this.closeLetter());
+    document.getElementById('letter-close')?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.closeLetter();
+    });
+
+    // The action keycap reads E on a keyboard and ACTION on a phone, because
+    // that is what the player is actually pressing there.
+    const keycap = this.isTouchDevice() ? t('hud.action') : 'E';
+    for (const cap of Array.from(document.querySelectorAll<HTMLElement>('.interact-key, .fixture-key'))) {
+      cap.textContent = keycap;
+    }
+
+    // The objective line can be brought back by hand once it has put itself away.
+    this.objectiveText?.addEventListener('click', () => this.revealObjective());
 
     // The thrown vial. Same instant-response contract as the hand button.
     document.getElementById('throw-btn')?.addEventListener('pointerdown', (event) => {
@@ -889,9 +1249,22 @@ export class Game {
     });
 
     document.addEventListener('keydown', (event) => {
+    // A letter being read owns the keyboard: [ACTION] and [ESC] put the sheet
+    // away, and nothing else reaches the game while it is open - no thrown vial,
+    // no hotbar, no flashlight, no sprint.
+    if (this.letterReaderOpen) {
+      if (event.code === 'KeyE' || event.code === 'Escape') this.closeLetter();
+      return;
+    }
     if (event.code === 'KeyF' && this.state === 'playing') this.toggleFlashlight();
     if (event.code === 'KeyM' && this.state === 'playing') this.minimap?.toggle();
-    if (event.code === 'KeyE' && this.state === 'playing') this.interact();
+    if (event.code === 'KeyE' && this.state === 'playing') {
+      // Reading is deliberate: the paper within reach is picked up and handed
+      // over as a sheet in the same beat.
+      const document = this.documentInReach();
+      this.interact();
+      if (document >= 0) this.openDocument(document);
+    }
     if (event.code === 'KeyB' && this.state === 'playing') this.throwBestGlass();
     // Hotbar: 1-8 selects a slot, and the same key again uses a usable item.
     // The item is fully in the player's hands - pulling up a bottle is a

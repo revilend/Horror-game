@@ -719,6 +719,44 @@ export function createBatteryMesh(body: THREE.Material, metal: THREE.Material): 
 }
 
 /**
+ * A handheld UV lamp: a battered body, a reflector hood and a violet lens.
+ *
+ * It is the one item in the run that does not open anything by itself - what it
+ * does is show the player where the hidden things are, which is why it is
+ * built as a lamp rather than another key.
+ */
+export function createUvLampMesh(
+  body: THREE.Material,
+  metal: THREE.Material,
+  lens: THREE.Material,
+): THREE.Group {
+  const group = new THREE.Group();
+
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.3, 10), body);
+  tube.rotation.z = Math.PI / 2;
+  group.add(tube);
+
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.18, 8), metal);
+  grip.position.set(-0.2, -0.02, 0);
+  grip.rotation.z = Math.PI / 2.4;
+  group.add(grip);
+
+  // The hood at the business end, and the lamp itself inside it.
+  const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.07, 0.08, 10, 1, true), metal);
+  hood.rotation.z = Math.PI / 2;
+  hood.position.x = 0.17;
+  group.add(hood);
+
+  const glow = new THREE.Mesh(new THREE.CircleGeometry(0.07, 12), lens);
+  glow.rotation.y = Math.PI / 2;
+  glow.position.x = 0.2;
+  group.add(glow);
+
+  shadowAll(group);
+  return group;
+}
+
+/**
  * Nailed planks across a doorway: what the shower room looks like until the
  * crowbar turns up. Crossed boards and a rusted brace, so it reads as
  * "someone boarded this shut" rather than "a door".

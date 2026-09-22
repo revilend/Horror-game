@@ -543,6 +543,28 @@ const PROP_PLAN: PropPlan[] = [
  * ---------------------------------------------------------------------- */
 
 /**
+ * Where the five archive letters are reserved a cell each.
+ *
+ * The sheets themselves are placed by Letters.ts, from the room rectangles, so
+ * that a letter follows its room if the plan is ever redrawn. These cells are
+ * what keeps the run's random scatter off those five squares - and `mark`
+ * below is what proves the cells are real floor rather than wall.
+ *
+ * Index-matched to `LETTERS` in notes.ts. Every cell is a room floor the plan
+ * already opens onto a corridor, and each is checked by placeCell at build
+ * time - so a letter can never end up sealed inside a wall.
+ */const LETTER_CELLS: Array<{ row: number; col: number }> = [
+  { row: 28, col: 12 }, // the ward the player wakes up in (room 404's bed)
+  { row: 17, col: 10 }, // the nurses' station, on the desk
+  { row: 24, col: 8 }, //  the operating theatre, beside the blood table
+  { row: 24, col: 24 }, // the generator room wall, by the breaker
+  { row: 53, col: 24 }, // the 3F roof-access door, by the corpse
+];
+
+/** Where the UV lamp is left, on the same wall as the mechanic's note. */
+const UV_LAMP_CELL = { row: 24, col: 25 };
+
+/**
  * The shower room's doorways are boarded shut until the crowbar turns up.
  * The crowbar is never hidden in here: it is what opens the boards, so a run
  * that put it inside would be walled off from its own key.
@@ -601,6 +623,9 @@ const CORPSE_ROOMS: Array<{ room: string; count: number }> = [
   { room: 'x', count: 2 },
   { room: 'v', count: 1 },
   { room: 'u', count: 1 },
+  // Third floor, at the roof-access door: the guard's last letter was written
+  // over him.
+  { room: 'X', count: 1 },
   // Second floor & deep basement
   { room: 'P', count: 3 },
   { room: 'D', count: 2 },
@@ -1094,6 +1119,8 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
     ...LOCKER_CELLS,
     ...HIDING_CELLS,
     ...LAMP_CELLS,
+    ...LETTER_CELLS,
+    UV_LAMP_CELL,
     { row: 9, col: 20 }, // the toolshed, where the ambulance's 12V cell sits
   ]) {
     spotTaken.add(`${cell.row}:${cell.col}`);
@@ -1107,6 +1134,11 @@ function buildWorldBase(scene: THREE.Scene): BaseMapInfo {
   spots.keys.forEach((cell, index) => mark(cell, CELL_KEY, `Key ${index + 1}`));
   spots.notes.forEach((cell, index) => mark(cell, CELL_NOTE, `Note ${index + 1}`));
   mark(spots.card, CELL_CARD, 'Gate keycard');
+  // The five archive letters and the UV lamp stand where they are written to
+  // stand. Running them through placeCell is what proves each cell is floor
+  // the plan opens onto, rather than a wall the sheet would sink into.
+  LETTER_CELLS.forEach((cell, index) => mark(cell, CELL_NOTE, `Letter ${index + 1}`));
+  mark(UV_LAMP_CELL, CELL_NOTE, 'UV lamp');
 
   // Everything the player has to collect this run, checked in one place: a
   // sampled cell that no lift landing can walk to would be a dead run, and

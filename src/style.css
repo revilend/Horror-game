@@ -1118,6 +1118,28 @@ body.in-locker #fixture-prompt .fixture-key {
   opacity: 1;
 }
 
+/*
+ * The UV lamp's violet wash. It is the only read the player gets that
+ * something invisible is being looked at, and it fades out on its own when the
+ * lamp is spent.
+ */
+#uv-wash {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+  opacity: 0;
+  mix-blend-mode: screen;
+  background:
+    radial-gradient(ellipse at 50% 55%, rgba(126, 84, 214, 0.36) 0%, rgba(60, 30, 120, 0.2) 45%, transparent 78%),
+    linear-gradient(180deg, rgba(52, 24, 96, 0.28), rgba(20, 8, 42, 0.18));
+  transition: opacity 0.5s ease;
+}
+
+#uv-wash.show {
+  opacity: 1;
+}
+
 #inventory {
   position: absolute;
   left: 16px;
@@ -1414,6 +1436,15 @@ body.in-locker #fixture-prompt .fixture-key {
   min-width: 0;
 }
 
+/*
+ * The objective line.
+ *
+ * It used to sit in the middle of the screen for the whole run, which turned
+ * a dark corridor into a paragraph. Now it only rises when the objective
+ * actually changes, stays for a few seconds, and sinks again - so the run is
+ * walked looking at the hospital rather than at a sentence. Tapping it (or
+ * opening the chart) brings it back on demand.
+ */
 .hud-objective {
   max-width: 100%;
   padding: 5px 16px;
@@ -1427,6 +1458,17 @@ body.in-locker #fixture-prompt .fixture-key {
   text-transform: uppercase;
   text-wrap: balance;
   color: #b3aa9a;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  pointer-events: none;
+  cursor: pointer;
+}
+
+.hud-objective.show {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
 }
 
 .hud-meter {
@@ -1602,6 +1644,187 @@ body.in-locker #fixture-prompt .fixture-key {
   font-size: 13px;
   line-height: 1.7;
   color: #c4bcaa;
+}
+
+/* ===== THE LETTER READER =====
+ *
+ * What the five archive letters open into: one sheet of stained 1987 paper,
+ * typed on a machine that was already old when the hospital closed. The wax
+ * seal at the foot is the same seal that opens the run, so closing a letter
+ * reads as putting the sheet back down on the tray.
+ * ======================================================================== */
+#letter-reader {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px
+    calc(env(safe-area-inset-bottom, 0px) + 14px);
+  background: radial-gradient(ellipse at center, rgba(5, 6, 10, 0.74), rgba(2, 2, 4, 0.95));
+  animation: letterFade 0.22s ease-out;
+}
+
+#letter-reader.hidden {
+  display: none;
+}
+
+.letter-sheet {
+  position: relative;
+  width: min(94vw, 640px);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 20px 22px 16px;
+  border: 1px solid rgba(104, 82, 46, 0.55);
+  border-radius: 3px;
+  color: #2c2418;
+  font-family: 'Special Elite', 'Courier New', monospace;
+  background-color: #e5d9b8;
+  background-image:
+    radial-gradient(circle at 12% 8%, rgba(120, 78, 26, 0.16) 0 12%, transparent 42%),
+    radial-gradient(circle at 88% 92%, rgba(96, 40, 18, 0.15) 0 10%, transparent 38%),
+    radial-gradient(circle at 62% 34%, rgba(140, 96, 40, 0.1) 0 8%, transparent 30%),
+    repeating-linear-gradient(
+      0deg,
+      rgba(120, 96, 58, 0.07) 0 1px,
+      transparent 1px 26px
+    ),
+    linear-gradient(168deg, #efe4c6 0%, #e2d5b3 55%, #d3c39d 100%);
+  box-shadow:
+    0 22px 60px rgba(0, 0, 0, 0.8),
+    inset 0 0 60px rgba(84, 58, 24, 0.22);
+  animation: letterIn 0.26s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/* A dried blood print in the corner, so no sheet reads as clean stationery. */
+.letter-sheet::after {
+  content: '';
+  position: absolute;
+  right: 18px;
+  top: 14px;
+  width: 54px;
+  height: 40px;
+  border-radius: 46% 54% 62% 38% / 58% 42% 58% 42%;
+  background: radial-gradient(circle at 40% 40%, rgba(112, 14, 8, 0.42), rgba(90, 10, 6, 0.12) 70%, transparent);
+  transform: rotate(-14deg);
+  pointer-events: none;
+}
+
+.letter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(104, 82, 46, 0.5);
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #6d5a34;
+}
+
+.letter-count {
+  white-space: nowrap;
+  color: #8a2b1c;
+}
+
+.letter-title {
+  margin: 12px 0 2px;
+  font-size: 19px;
+  line-height: 1.3;
+  letter-spacing: 0.6px;
+  color: #241d12;
+}
+
+/* A note has no date on it, only a letter does. */
+.letter-date.hidden {
+  display: none;
+}
+
+.letter-date {
+  margin-bottom: 12px;
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: #7a6338;
+}
+
+.letter-body {
+  white-space: pre-line;
+  font-size: 14px;
+  line-height: 1.85;
+  color: #302718;
+}
+
+.letter-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(104, 82, 46, 0.5);
+}
+
+/* The seal, shrunk down: a stamp rather than a door. */
+.letter-seal {
+  padding: 9px 20px;
+  font-size: 11px;
+  letter-spacing: 2px;
+  animation: none;
+  flex: 0 0 auto;
+}
+
+.letter-hint {
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.6px;
+  color: #6d5a34;
+  text-align: right;
+}
+
+@keyframes letterIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes letterFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/*
+ * Narrow landscape phones: the sheet has to fit between the notch and the
+ * bottom edge without scrolling, so the type tightens up rather than the
+ * letter being cut off.
+ */
+@media (max-height: 460px) {
+  .letter-title {
+    font-size: 16px;
+    margin-top: 8px;
+  }
+
+  .letter-body {
+    font-size: 12.5px;
+    line-height: 1.7;
+  }
+
+  .letter-sheet {
+    padding: 14px 16px 12px;
+  }
+
+  .letter-foot {
+    margin-top: 12px;
+    padding-top: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #letter-reader,
+  .letter-sheet {
+    animation: none;
+  }
 }
 
 /* ===== DAMAGE FLASH ===== */

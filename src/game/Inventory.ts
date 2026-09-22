@@ -113,12 +113,13 @@ export const ITEM_DEFS: Record<ItemId, ItemDef> = {
     usable: false, perSlot: 1,
   },
   uv: {
-    // Read through i18n so the strip and its tooltips follow the
-    // selected language, even when it is switched mid-run.
+    // The one usable item that is not aimed at anything: it changes how the
+    // hospital is read - paper blazes, the corner map marks the letters that
+    // are still lying about, and a violet cast comes over the screen.
     get name() { return t('item.uv.name'); },
     icon: '\u{1FA79}',
     get hint() { return t('item.uv.hint'); },
-    usable: false, perSlot: 1,
+    usable: true, perSlot: 1,
   },
 };
 
@@ -143,6 +144,16 @@ export class Inventory {
 
   /** Raised when the player taps a slot holding a usable item. */
   onUse: ((id: ItemId) => void) | null = null;
+
+  /**
+   * The readout's own timer.
+   *
+   * It used to sit there for the whole run once the player picked anything up,
+   * which put a line of prose across the bottom of every dark corridor. Now it
+   * surfaces when a slot is selected or something is picked up, and gets out of
+   * the way a few seconds later.
+   */
+  private readoutTimeout: number | null = null;
 
   constructor(root: HTMLElement | null, slotCount = 8, readout: HTMLElement | null = null) {
     this.root = root;
@@ -326,6 +337,8 @@ export class Inventory {
     if (!entry || contents.length === 0) {
       this.readout.textContent = '';
       this.readout.classList.remove('show');
+      if (this.readoutTimeout) window.clearTimeout(this.readoutTimeout);
+      this.readoutTimeout = null;
       return;
     }
 
@@ -342,5 +355,10 @@ export class Inventory {
     ];
     this.readout.textContent = parts.filter(Boolean).join(' ');
     this.readout.classList.add('show');
+    if (this.readoutTimeout) window.clearTimeout(this.readoutTimeout);
+    this.readoutTimeout = window.setTimeout(() => {
+      this.readout?.classList.remove('show');
+      this.readoutTimeout = null;
+    }, 6000);
   }
 }

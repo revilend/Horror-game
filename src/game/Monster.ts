@@ -1,6 +1,11 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CELL } from './World';
 import { findPath, GridPoint, isWalkableCell } from './Pathfinding';
+// The shipped doctor model, sitting at the repository root. Vite hashes it
+// into dist/assets at build time, so the raw-branch copy and the standalone
+// mirror both fetch the same file the bundler emitted.
+import doctorGlbUrl from '../../doktor.glb?url';
 
 type MonsterState = 'patrol' | 'investigate' | 'chase';
 
@@ -133,6 +138,19 @@ export class Monster {
   private eyeLight: THREE.PointLight;
   /** The head-mirror reflector: a real spotlight thrown down the corridor. */
   private mirrorLight: THREE.SpotLight;
+
+  // --- doktor.glb ---------------------------------------------------------
+  // The shipped model replaces the hand-built rig once it has arrived. Until
+  // then - and forever if the file never loads - the procedural doctor stays
+  // up, so a missing asset degrades to the old rig rather than an empty ward.
+  /** Wrapper carrying the model's +Z front round to the rig's -Z convention. */
+  private modelRoot: THREE.Group | null = null;
+  /** Wrapper Y that puts the soles back on the floor after rescaling. */
+  private modelBaseY = 0;
+  private glbArmR: THREE.Object3D | null = null;
+  private glbArmL: THREE.Object3D | null = null;
+  private glbHead: THREE.Object3D | null = null;
+  private usingGlb = false;
 
   /** Sets the height of the floor he is standing on. */
   setGroundHeight(height: number): void {
@@ -528,6 +546,86 @@ export class Monster {
 
     this.mesh.position.copy(this.position);
     this.buildPatrolPoints();
+    this.loadDoctorModel();
+  }
+
+  /**
+   * Swaps the hand-built rig for the shipped doktor.glb once it arrives.
+   *
+   * The GLB is authored facing +Z - its anatomical right arm sits at -X and
+   * both hand props are held out at +Z - while every line of the AI above
+   * assumes the rig faces -Z: the movement heading is atan2 + PI and the
+   * headlamp throws its beam down -Z. The model therefore sits in a wrapper
+   * yawed by PI, which lines its front up with the heading without touching
+   * any of that logic. The wrapper also rescales the model to DOCTOR_HEIGHT
+   * and drops its feet onto y = 0, so the soles stay glued to whatever floor
+   * the lift rides to and every distance the chase rests on still measures
+   * true.
+   *
+   * The lamp and the ember eyes leave the procedural headGroup - which is
+   * hidden with the rest of the rig - and hang off the GLB's Head node, so
+   * the beam still sweeps exactly where he looks, nod and loll included.
+   */
+  private loadDoctorModel(): void {
+    const loader = new GLTFLoader();
+    loader.load(
+      doctorGlbUrl,
+      (gltf) => {
+        const model = gltf.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const height = Math.max(0.01, box.max.y - box.min.y);
+        const scale = DOCTOR_HEIGHT / height;
+
+        model.traverse((child) => {
+          const mesh = child as THREE.Mesh;
+          if (mesh.isMesh) {
+            mesh.castShadow = true;
+            mesh.receiveShadow = false;
+          }
+        });
+
+        const head = model.getObjectByName('Head') ?? null;
+        if (head) {
+          // Model front is +Z, so the fittings point down +Z in head-local
+          // space; the wrapper yaw turns that into the rig's -Z beam.
+          this.mirrorLight.position.set(0, 0.3, 0.16);
+          head.add(this.mirrorLight);
+          this.mirrorLight.target.position.set(0, -0.05, 6);
+          head.add(this.mirrorLight.target);
+          this.eyeLight.position.set(0, 0.24, 0.1);
+          head.add(this.eyeLight);
+        }
+
+        const root = new THREE.Group();
+        root.name = 'doktorGlb';
+        root.rotation.y = Math.PI;
+        root.scale.setScalar(scale);
+        root.position.y = -box.min.y * scale;
+        root.add(model);
+        this.mesh.add(root);
+
+        this.modelRoot = root;
+        this.modelBaseY = root.position.y;
+        this.glbArmR = model.getObjectByName('Arm_R') ?? null;
+        this.glbArmL = model.getObjectByName('Arm_L') ?? null;
+        this.glbHead = head;
+        this.usingGlb = true;
+
+        for (const group of [
+          this.legsGroup,
+          this.torso,
+          this.armsGroup,
+          this.headGroup,
+          this.weaponGroup,
+        ]) {
+          group.visible = false;
+        }
+      },
+      undefined,
+      (error) => {
+        console.warn('doktor.glb failed to load - keeping the procedural doctor', error);
+      },
+    );
   }
 
   private buildPatrolPoints(): void {
@@ -853,27 +951,46 @@ export class Monster {
     const bob = Math.sin(this.animPhase) * (0.04 + intensity * 0.1);
     const swing = Math.sin(this.animPhase) * (0.32 + intensity * 0.32);
 
-    this.torso.position.y = WAIST_Y + bob;
-    // Counter-sway in the hips keeps the walk from looking metronomic, and the
-    // forward lean deepens the closer he gets.
-    this.torso.rotation.z = Math.sin(this.animPhase * 0.5) * (0.03 + intensity * 0.05);
-    this.torso.rotation.x = 0.26 + intensity * 0.14;
+    if (this.usingGlb && this.modelRoot) {
+      // The GLB doctor: its limbs are baked into the meshes, so the walk is
+      // driven into the nodes that do exist - bob and lean on the wrapper,
+      // the hanging left arm swings, the raised saw arm only works a short
+      // arc so the blade never scythes through the tiles, and the head (lamp
+      // included) nods on the footfall. The stride click and the lamp
+      // flicker further down run for both doctors.
+      const root = this.modelRoot;
+      root.position.y = this.modelBaseY + bob * 0.7;
+      root.rotation.x = 0.05 + intensity * 0.1;
+      root.rotation.z = Math.sin(this.animPhase * 0.5) * (0.02 + intensity * 0.045);
+      if (this.glbArmL) this.glbArmL.rotation.x = swing * 0.55;
+      if (this.glbArmR) this.glbArmR.rotation.x = -swing * 0.16;
+      if (this.glbHead) {
+        this.glbHead.rotation.z = Math.sin(this.animPhase * 0.35) * (0.05 + intensity * 0.07);
+        this.glbHead.rotation.x = Math.abs(Math.sin(this.animPhase * 0.5)) * 0.07 * intensity;
+      }
+    } else {
+      this.torso.position.y = WAIST_Y + bob;
+      // Counter-sway in the hips keeps the walk from looking metronomic, and
+      // the forward lean deepens the closer he gets.
+      this.torso.rotation.z = Math.sin(this.animPhase * 0.5) * (0.03 + intensity * 0.05);
+      this.torso.rotation.x = 0.26 + intensity * 0.14;
 
-    // Head: nods on the footfall and lolls to one side as he closes in.
-    this.headGroup.position.y = HEAD_Y + bob;
-    this.headGroup.rotation.z = Math.sin(this.animPhase * 0.35) * (0.05 + intensity * 0.07);
-    this.headGroup.rotation.x = Math.abs(Math.sin(this.animPhase * 0.5)) * 0.07 * intensity;
+      // Head: nods on the footfall and lolls to one side as he closes in.
+      this.headGroup.position.y = HEAD_Y + bob;
+      this.headGroup.rotation.z = Math.sin(this.animPhase * 0.35) * (0.05 + intensity * 0.07);
+      this.headGroup.rotation.x = Math.abs(Math.sin(this.animPhase * 0.5)) * 0.07 * intensity;
 
-    // Limbs swing from their joints; the legs counter-swing from the hip.
-    this.leftArmPivot.rotation.x = swing;
-    // The saw arm keeps its raised grip and only works through a short arc,
-    // so a 0.9 m blade never scythes down through the tiles.
-    this.rightArmPivot.rotation.x = ARM_FORWARD - swing * 0.2;
-    this.leftLegPivot.rotation.x = -swing * 0.8;
-    this.rightLegPivot.rotation.x = swing * 0.8;
+      // Limbs swing from their joints; the legs counter-swing from the hip.
+      this.leftArmPivot.rotation.x = swing;
+      // The saw arm keeps its raised grip and only works through a short arc,
+      // so a 0.9 m blade never scythes down through the tiles.
+      this.rightArmPivot.rotation.x = ARM_FORWARD - swing * 0.2;
+      this.leftLegPivot.rotation.x = -swing * 0.8;
+      this.rightLegPivot.rotation.x = swing * 0.8;
 
-    // The bone saw sways menacingly from the hand.
-    this.weaponGroup.rotation.z = Math.sin(this.animPhase * 0.5) * 0.1;
+      // The bone saw sways menacingly from the hand.
+      this.weaponGroup.rotation.z = Math.sin(this.animPhase * 0.5) * 0.1;
+    }
 
     // A heel click on every half stride, in time with the legs.
     const stride = Math.sign(Math.sin(this.animPhase));
@@ -912,6 +1029,16 @@ export class Monster {
     this.leftLegPivot.rotation.set(0, 0, 0);
     this.rightLegPivot.rotation.set(0, 0, 0);
     this.weaponGroup.rotation.set(-ARM_FORWARD, 0, 0);
+    if (this.modelRoot) {
+      // The wrapper's yaw is its identity - it is what lines the +Z model up
+      // with the -Z rig convention - so only pose axes are cleared here.
+      this.modelRoot.position.y = this.modelBaseY;
+      this.modelRoot.rotation.x = 0;
+      this.modelRoot.rotation.z = 0;
+      this.glbArmL?.rotation.set(0, 0, 0);
+      this.glbArmR?.rotation.set(0, 0, 0);
+      this.glbHead?.rotation.set(0, 0, 0);
+    }
     if (this.patrolPoints.length === 0) this.buildPatrolPoints();
   }
 }

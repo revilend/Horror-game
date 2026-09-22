@@ -286,7 +286,45 @@ const UI: Record<string, Localized> = {
 
   /* ---- interaction prompts ---- */
   'act.take': { uz: '{item} olish', en: 'Take the {item}', ru: 'Взять: {item}' },
-  'act.readNote': { uz: 'Qaydni oqish', en: 'Read the note', ru: 'Прочитать записку' },
+  // Every readable in the game: the twenty scattered notes and the five
+  // archive letters, which are read off the same prompt.
+  'act.readNote': { uz: "Xatni o'qish", en: 'Read the letter', ru: 'Прочитать письмо' },
+  'letter.stamp': {
+    uz: 'SENT-JUD RUHIY KASALXONASI · 1987 · BEMORLAR ARXIVI',
+    en: 'ST. JUDE MENTAL ASYLUM · 1987 · PATIENT ARCHIVE',
+    ru: 'ПСИХИАТРИЧЕСКАЯ ЛЕЧЕБНИЦА СЕНТ-ДЖУД · 1987 · АРХИВ ПАЦИЕНТОВ',
+  },
+  'letter.found': { uz: 'XAT {n}/{total}', en: 'LETTER {n}/{total}', ru: 'ПИСЬМО {n}/{total}' },
+  'note.found': { uz: 'QAYD {n}/{total}', en: 'NOTE {n}/{total}', ru: 'ЗАПИСКА {n}/{total}' },
+  'letter.close': { uz: 'YOPISH', en: 'CLOSE', ru: 'ЗАКРЫТЬ' },
+  'letter.closeHint': {
+    uz: 'Yopish uchun ekranga bosing — klaviaturada [ACTION] yoki [ESC]',
+    en: 'Tap anywhere to close — on a keyboard use [ACTION] or [ESC]',
+    ru: 'Нажмите в любом месте, чтобы закрыть — на клавиатуре [ACTION] или [ESC]',
+  },
+  'hud.action': { uz: 'ACTION', en: 'ACTION', ru: 'ACTION' },
+  'hud.letters': { uz: 'Xatlar', en: 'Letters', ru: 'Письма' },
+  'msg.letterRead': {
+    uz: 'Xat o\'qildi: {title} ({n}/{total})',
+    en: 'Letter read: {title} ({n}/{total})',
+    ru: 'Письмо прочитано: {title} ({n}/{total})',
+  },
+  'msg.letterAll': {
+    uz: "Beshta xatning hammasi o'qildi — Sent-Jud tarixi endi to'liq",
+    en: 'All five letters read — the history of St Jude is complete',
+    ru: 'Прочитаны все пять писем — история Сент-Джуда собрана',
+  },
+  'msg.uvFound': {
+    uz: 'UV chiroq — qorong\'ida yashirin izlarni ko\'rsatadi',
+    en: 'A UV lamp — it shows what is hidden in the dark',
+    ru: 'УФ-лампа — показывает то, что спрятано в темноте',
+  },
+  'msg.uvOn': {
+    uz: 'UV chiroq yondi: yashirin xatlar va kalitlar xaritada ko\'rindi',
+    en: 'UV lamp on: hidden letters and keys show up on the map',
+    ru: 'УФ-лампа включена: скрытые письма и ключи видны на карте',
+  },
+  'msg.uvOff': { uz: 'UV chiroq o\'chdi', en: 'The UV lamp goes dark', ru: 'УФ-лампа гаснет' },
   'act.pry': { uz: 'Lom bilan ochish', en: 'Pry it open with the crowbar', ru: 'Вскрыть ломом' },
   'act.boarded': { uz: 'Eshik mixlangan', en: 'The door is boarded shut', ru: 'Дверь заколочена' },
   'act.installFuse': { uz: "Saqlagichni o'rnatish", en: 'Install the fuse', ru: 'Вставить предохранитель' },
@@ -457,7 +495,7 @@ const UI: Record<string, Localized> = {
   'msg.lightsOff': { uz: 'Xona qorong\'ilikka cho\'mdi.', en: 'The room drops into the dark.', ru: 'Комната уходит в темноту.' },
   'msg.tapOn': { uz: 'Zanglagan suv oqib tushdi.', en: 'Rusty water hammers into the basin.', ru: 'Ржавая вода бьёт в раковину.' },
   'msg.tapOff': { uz: 'Jo\'mrak yopildi. Tomchilash davom etadi.', en: 'The tap shuts. It keeps dripping.', ru: 'Кран закрыт. Капли продолжают падать.' },
-  'msg.radioOn': { uz: 'Statika koridorni yorib o\'tdi. Kimdir boshini burdi.', en: 'Static howls down the corridor. Something turns its head.', ru: 'Статика ревёт по коридору. Кто-то поворачивает голову.' },
+  'msg.radioOn': { uz: 'Statika koridorni yorib o\'tdi. Kimdir boshini burdi — radio shu yerda chalinib turadi.', en: 'Static howls down the corridor. Something turns its head - the radio keeps playing right here.', ru: 'Статика ревёт по коридору. Кто-то поворачивает голову — радио продолжает играть здесь.' },
   'msg.radioOff': { uz: 'Radio o\'chdi.', en: 'The radio dies.', ru: 'Радио глохнет.' },
   'msg.cartBraced': { uz: 'Arava g\'ichillab to\'xtadi. Tormoz tushdi — yo\'l to\'sildi.', en: 'The cart locks with a clank. The doorway is barred.', ru: 'Тележка замирает с лязгом. Проход перекрыт.' },
   'msg.cartReleased': { uz: 'Tormoz ko\'tarildi, arava yana yuradi.', en: 'The brake lifts and the cart rolls free again.', ru: 'Тормоз поднят, тележка снова катится.' },

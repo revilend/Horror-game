@@ -39,6 +39,14 @@ export interface QuestFlags {
   ignition: boolean;
   /** The 12V battery out of the courtyard tool shed. */
   battery: boolean;
+  /** A valve radio switched on: the noise is what pulls him off the player. */
+  radio: boolean;
+  /** Crash cart braced across a doorway, barring a corridor. */
+  barricade: boolean;
+  /** The UV lamp found in the generator room and lit once. */
+  uv: boolean;
+  /** Archive letters read, out of five. */
+  letters: number;
   /** The van running and the run finished. */
   escaped: boolean;
 }
@@ -59,6 +67,10 @@ export function newQuestFlags(): QuestFlags {
     extinguisher: false,
     ignition: false,
     battery: false,
+    radio: false,
+    barricade: false,
+    uv: false,
+    letters: 0,
     escaped: false,
   };
 }
@@ -195,6 +207,42 @@ export const QUEST_STAGES: QuestStage[] = [
       ru: 'Найдите в сарае во дворе аккумулятор 12V',
     },
     done: (f) => f.battery,
+  },
+  {
+    id: 'barricade',
+    text: {
+      uz: "Yo'lakni to'sish uchun aravachaning tormozini tushirib, eshik oldiga qo'ying — u quvishda sizni sekinlashtiradi",
+      en: 'Drop the brake on a crash cart and leave it in a doorway: a braced cart stops the chase',
+      ru: 'Опустите тормоз каталки и оставьте её в проходе — заклиненная тележка останавливает погоню',
+    },
+    done: (f) => f.barricade,
+  },
+  {
+    id: 'radio',
+    text: {
+      uz: 'Qavatdagi radioni yoqing — shovqin uni boshqa tomonga tortadi',
+      en: 'Switch a radio on: the noise drags him to the wrong corridor',
+      ru: 'Включите радио на этаже: шум уводит его в другой коридор',
+    },
+    done: (f) => f.radio,
+  },
+  {
+    id: 'letters',
+    text: {
+      uz: 'Kasalxonada yashiringan 5 ta xatni topib o\'qing — qochish yo\'li shularda yozilgan',
+      en: 'Find and read all five hidden letters - the way out is written in them',
+      ru: 'Найдите и прочитайте все пять спрятанных писем — в них описан путь наружу',
+    },
+    done: (f) => (f.letters ?? 0) >= 5,
+  },
+  {
+    id: 'uv',
+    text: {
+      uz: 'Generator xonasidagi UV chiroqni olib, qorong\'ida yashirin izlarni ko\'ring',
+      en: 'Take the UV lamp from the generator room and scan the dark for hidden marks',
+      ru: 'Возьмите УФ-лампу в генераторной и осмотрите темноту в поисках скрытых меток',
+    },
+    done: (f) => f.uv,
   },
   {
     id: 'escape',

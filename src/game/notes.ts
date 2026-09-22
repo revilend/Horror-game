@@ -175,6 +175,118 @@ export const NOTES: NoteDef[] = [
   },
 ];
 
+/* -------------------------------------------------------------------------
+ * THE FIVE LETTERS
+ *
+ * Where the twenty notes above are Dr Elias Ren's account of the outbreak,
+ * the five letters are the last things written by the people who were still
+ * alive on the wards when Protocol 7 came into force: a patient in the bed
+ * next door, the nurse on nights, Aris himself, the hospital's mechanic and
+ * the man on the gate.
+ *
+ * Unlike the notes they are not scattered at random. Each one has a home - the
+ * ward the player wakes in, the nurses' station, the operating table, the
+ * generator room wall and the roof-access door upstairs - so the story walks
+ * in the same order the hospital was laid out. The cells are fixed in
+ * World.ts (LETTER_CELLS), and this array is in that same order.
+ * ---------------------------------------------------------------------- */
+export interface LetterDef {
+  /** Stable id, used by the save file and by the reader's heading. */
+  id: string;
+  title: Localized;
+  /** The date written across the top of the sheet. */
+  date: Localized;
+  text: Localized;
+}
+
+export const LETTERS: LetterDef[] = [
+  {
+    id: 'ward-403',
+    title: {
+      uz: "Bemor 403 ning so'nggi so'zlari",
+      en: "Patient 403's last words",
+      ru: 'Последние слова пациента 403',
+    },
+    date: { uz: '1987-yil, 4-noyabr', en: '4 November 1987', ru: '4 ноября 1987 года' },
+    text: {
+      uz: "Agar buni o'qiyotgan bo'lsang, demak sen hali tiriksan. Doktor har kecha bittadan bemorni o'z laboratoriyasiga olib ketmoqda. Kecha 402-xonadagi qiz qichqirdi... keyin hammasi jim bo'lib qoldi. U arra bilan yuradi. Qorong'ida uning ko'zlariga qarama — ular qizil yonadi! U kelganda qochib ulgurmaysan, darhol shkafga bekin va nafasingni yut...",
+      en: "If you are reading this, you are still alive. The doctor takes one patient down to his laboratory every night. Last night the girl in 402 screamed... and then everything went quiet. He walks with a saw. Do not look into his eyes in the dark - they burn red! You will not have time to run when he comes; get into a wardrobe at once and swallow your breathing...",
+      ru: 'Если ты это читаешь — ты ещё жив. Доктор каждую ночь уводит одного пациента в свою лабораторию. Вчера кричала девочка из 402-й... а потом всё стихло. Он ходит с пилой. Не смотри ему в глаза в темноте — они горят красным! Убежать ты не успеешь, сразу прячься в шкаф и задержи дыхание...',
+    },
+  },
+  {
+    id: 'nurse-diary',
+    title: {
+      uz: 'Hamshiraning kundaligi',
+      en: "The nurse's diary",
+      ru: 'Дневник медсестры',
+    },
+    date: { uz: '1987-yil, 2-noyabr', en: '2 November 1987', ru: '2 ноября 1987 года' },
+    text: {
+      uz: "Doktor Aris butunlay aqldan ozdi. U 'Protokol 7' zardobini o'z tomiriga kiritdi. U endi inson emas, og'riqni sezmaydigan yirtqich. Kecha bosh shifokor politsiya chaqirmoqchi bo'lgandi, Aris uni o'z kabinetida suyak arrasi bilan... Men qochishim kerak! Asosiy hovli darvozasining elektr toki o'chirilgan, saqlagich (fuse) elektr xonasida. Tomning kalitini esa Aris o'z seyfiga yashirdi...",
+      en: "Dr Aris has gone completely mad. He injected the 'Protocol 7' serum into his own vein. He is not a man any more, he is a predator that cannot feel pain. Last night the chief surgeon was going to call the police, and Aris took a bone saw to him in his own office... I have to get out! The courtyard gate has no power; the fuse is in the electrical room. And the roof key - Aris hid it in his safe...",
+      ru: 'Доктор Арис окончательно сошёл с ума. Он ввёл себе сыворотку «Протокол 7». Он больше не человек, а хищник, который не чувствует боли. Вчера главный врач хотел вызвать полицию, и Арис сделал с ним... в его же кабинете, костной пилой. Мне нужно бежать! Питание на воротах двора отключено, предохранитель (fuse) в электрощитовой. А ключ от крыши Арис спрятал в своём сейфе...',
+    },
+  },
+  {
+    id: 'aris-journal',
+    title: {
+      uz: "Dr. Arisning shaxsiy jurnali — 'Protokol 7'",
+      en: "Dr Aris's private journal — 'Protocol 7'",
+      ru: 'Личный журнал доктора Ариса — «Протокол 7»',
+    },
+    date: { uz: '1987-yil, 1-noyabr', en: '1 November 1987', ru: '1 ноября 1987 года' },
+    text: {
+      uz: "Insoniyat qo'rquv va og'riqning qulidir. Men bu ojizlikni yo'qotaman. 401 dan 403 gacha bo'lgan barcha subyektlar operatsiya stolida jon berdi. Faqat 404-bemor tirik qoldi — uning miyasi zardobga qarshilik ko'rsatmoqda. Bu mo'jiza! Men uning bosh suyagini o'z qo'llarim bilan ochib ko'rishim shart. U qochib qutulolmaydi, bu kasalxona — uning qabri.",
+      en: 'Mankind is a slave to fear and to pain. I will remove that weakness. Every subject from 401 to 403 died on the operating table. Only patient 404 is still alive - his brain is resisting the serum. A miracle! I must open his skull with my own hands and see it. He cannot escape: this hospital is his grave.',
+      ru: 'Человечество — раб страха и боли. Я уничтожу эту слабость. Все субъекты с 401 по 403 умерли на операционном столе. Жив остался только пациент 404 — его мозг сопротивляется сыворотке. Это чудо! Я обязан своими руками вскрыть его череп и увидеть это. Он не сбежит: эта больница — его могила.',
+    },
+  },
+  {
+    id: 'mechanic-note',
+    title: {
+      uz: 'Bosh mexanik eslatmasi',
+      en: "The head mechanic's note",
+      ru: 'Записка главного механика',
+    },
+    date: { uz: '1987-yil, 28-oktabr', en: '28 October 1987', ru: '28 октября 1987 года' },
+    text: {
+      uz: "Janubiy hovli darvozasi avtomatik qulfga ega. Uni ochish uchun 3 ta qavatdagi 3 ta temir kalitni topib, so'ng mana shu yerdagi elektr saqlagichini ulash kerak. Tok ulanganda darvoza ochiladi. Lekin ehtiyot bo'ling: generator ishga tushganda juda qattiq gursillaydi — Doktor Aris bu tovushni eshitib shu yoqqa yugurib keladi!",
+      en: 'The south courtyard gate runs on an automatic lock. To open it you need the three iron keys from the three floors, and then the fuse seated here, in this panel. Power it and the gate opens. But be careful: when the generator catches it roars loud enough to wake the dead - Dr Aris hears that noise and comes running straight here!',
+      ru: 'Южные ворота двора на автоматическом замке. Чтобы открыть их, нужно найти три железных ключа на трёх этажах и вставить предохранитель вот здесь, в этот щиток. Дадите питание — ворота откроются. Но осторожно: когда генератор схватит, он ревёт так, что слышно на всё здание — доктор Арис услышит этот шум и прибежит прямо сюда!',
+    },
+  },
+  {
+    id: 'guard-letter',
+    title: {
+      uz: "Qorovulning so'nggi xati",
+      en: "The guard's last letter",
+      ru: 'Последнее письмо сторожа',
+    },
+    date: { uz: '1987-yil, 5-noyabr', en: '5 November 1987', ru: '5 ноября 1987 года' },
+    text: {
+      uz: "Pastki hovli — bu qopqon! Aris hovli yo'lagini poylab yuribdi. Yagona najot — tom! Tomdagi zanglagan yong'in zinapoyasini pastga tushirish kerak. Kalitni Arisning laboratoriya stolidan olgandim... Lekin u yetib keldi... Qonim to'xtamayapti... Zinapoyaga yugur...",
+      en: 'The lower yard is a trap! Aris watches the courtyard path. The only way out is the roof! You have to drop the rusted fire escape on the roof terrace. I took the key off the table in Aris\u2019s laboratory... but he got here first... My blood will not stop... Run for the stairs...',
+      ru: 'Нижний двор — это ловушка! Арис сторожит дорожку во дворе. Единственное спасение — крыша! Нужно сбросить вниз ржавую пожарную лестницу на террасе. Ключ я взял со стола в лаборатории Ариса... но он успел раньше... Кровь не останавливается... Беги к лестнице...',
+    },
+  },
+];
+
+/**
+ * Everything in the game that can be read, in one table.
+ *
+ * The reader is indexed by a single number - the index a pickup carries - so
+ * the twenty scattered notes come first (0..19), exactly as the level's scatter
+ * deals them, and the five archive letters follow (20..24). The game imports
+ * this table under the name it used to give NOTES, which is what lets a letter
+ * be handed over by the same pickup path as a page of Ren's journal without the
+ * reader having to know which is which.
+ */
+export const READABLES: NoteDef[] = [...NOTES, ...LETTERS];
+
+/** First index in READABLES that is an archive letter, rather than a note. */
+export const LETTER_INDEX_OFFSET = NOTES.length;
+
 /** Blood scrawls painted on the walls, in all three languages. */
 export const WALL_TEXTS: Array<{
   row: number;
