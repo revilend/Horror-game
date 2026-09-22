@@ -51,7 +51,7 @@ export const ELEVATOR_DECKS: ElevatorDeck[] = [
     cageRow: 43,
     label: { uz: 'B1', en: 'B1', ru: 'Б1' },
     name: { uz: 'B1 PODVAL', en: 'B1 BASEMENT', ru: 'Б1 ПОДВАЛ' },
-    sub: { uz: 'qozonxona va morgniy', en: 'boiler room and morgue', ru: 'котельная и морг' },
+    sub: { uz: 'qozonxona va morg', en: 'boiler room and morgue', ru: 'котельная и морг' },
     height: 0,
   },
   {
@@ -93,7 +93,7 @@ export const ELEVATOR_DECKS: ElevatorDeck[] = [
     id: 'roof',
     landingRow: 7,
     cageRow: 6,
-    label: { uz: 'VASH', en: 'ROOF', ru: 'КРШ' },
+    label: { uz: 'TOM', en: 'ROOF', ru: 'КРШ' },
     name: { uz: 'TOM — QOCHISH DARVOZASI', en: 'ROOF — ESCAPE GATE', ru: 'КРЫША — ВОРОТА ПОБЕГА' },
     sub: { uz: "yomg'ir va qochish yo'li", en: 'rain and the way out', ru: 'дождь и путь наружу' },
     height: ROOF_Y,

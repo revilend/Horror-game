@@ -73,7 +73,7 @@ export const QUEST_STAGES: QuestStage[] = [
   {
     id: 'cot',
     text: {
-      uz: 'Krovat yonidagi patnisdan qulf ochadigan ignani toping — 404-xonani ochadi',
+      uz: 'Karavot yonidagi patnisdan qulf ochadigan ignani toping — 404-xonani ochadi',
       en: 'Find a lockpick pin on the cot tray — it opens Room 404',
       ru: 'Найдите отмычку в лотке у койки — она открывает палату 404',
     },

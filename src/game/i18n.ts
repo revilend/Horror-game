@@ -84,7 +84,7 @@ export function L(value: Localized): string {
 const UI: Record<string, Localized> = {
   /* ---- loading & menu ---- */
   'loading.title': { uz: 'DR. ARIS', en: 'DR. ARIS', ru: 'Д-Р АРИС' },
-  'loading.subtitle': { uz: 'THE MAD SURGEON', en: 'THE MAD SURGEON', ru: 'БЕЗУМНЫЙ ХИРУРГ' },
+  'loading.subtitle': { uz: 'AQLSIZ JARROH', en: 'THE MAD SURGEON', ru: 'БЕЗУМНЫЙ ХИРУРГ' },
   'loading.text': { uz: 'Yuklanmoqda...', en: 'Loading...', ru: 'Загрузка...' },
   'loading.1': { uz: 'Kasalxona eshigi ochilmoqda...', en: 'Opening the asylum door...', ru: 'Дверь больницы открывается...' },
   'loading.2': { uz: 'Xonalar qurilmoqda...', en: 'Building the rooms...', ru: 'Строятся палаты...' },
@@ -94,12 +94,12 @@ const UI: Record<string, Localized> = {
   'loading.6': { uz: 'Tayyor!', en: 'Ready!', ru: 'Готово!' },
   'loading.failed': { uz: 'Xatolik yuz berdi! Qayta yuklang.', en: 'Something went wrong. Reload the page.', ru: 'Произошла ошибка. Перезагрузите страницу.' },
 
-  'menu.eyebrow': { uz: "QO'RSINCHLI O'YIN", en: 'HORROR GAME', ru: 'ХОРРОР-ИГРА' },
+  'menu.eyebrow': { uz: "QO'RQINCHLI O'YIN", en: 'HORROR GAME', ru: 'ХОРРОР-ИГРА' },
   'menu.title': { uz: 'DR. ARIS', en: 'DR. ARIS', ru: 'Д-Р АРИС' },
 
   /* ---- the diegetic chart: PROTOKOL 7, the game's only menu ---- */
   'journal.stamp': {
-    uz: 'SENT-JUD RUHIIY KASALXONASI · 1987',
+    uz: 'SENT-JUD RUHIY KASALXONASI · 1987',
     en: 'ST. JUDE MENTAL ASYLUM · 1987',
     ru: 'ПСИХИАТРИЧЕСКАЯ ЛЕЧЕБНИЦА СЕНТ-ДЖУД · 1987',
   },
@@ -157,7 +157,7 @@ const UI: Record<string, Localized> = {
     en: 'CONTINUE — {time}',
     ru: 'ПРОДОЛЖИТЬ — {time}',
   },
-  'menu.sensitivity': { uz: 'Sezgirlilik', en: 'Sensitivity', ru: 'Чувствительность' },
+  'menu.sensitivity': { uz: 'Sezgirlik', en: 'Sensitivity', ru: 'Чувствительность' },
   'menu.graphics': { uz: 'Grafika', en: 'Graphics', ru: 'Графика' },
   'menu.sound': { uz: 'Ovoz', en: 'Sound', ru: 'Звук' },
   'menu.language': { uz: 'Til', en: 'Language', ru: 'Язык' },
@@ -254,7 +254,7 @@ const UI: Record<string, Localized> = {
 
   /* ---- intro cutscene ---- */
   'intro.skip': { uz: 'INTRODAN O‘TISH ▸▸', en: 'SKIP INTRO ▸▸', ru: 'ПРОПУСТИТЬ ▸▸' },
-  'intro.tapeLabel': { uz: 'AUDIO TAPE #0 — DR. ARIS', en: 'AUDIO TAPE #0 — DR. ARIS', ru: 'АУДИОПЛЁНКА №0 — Д-Р АРИС' },
+  'intro.tapeLabel': { uz: 'AUDIO KASETASI #0 — DR. ARIS', en: 'AUDIO TAPE #0 — DR. ARIS', ru: 'АУДИОПЛЁНКА №0 — Д-Р АРИС' },
   'intro.narration': {
     uz: "1987-yil, 4-noyabr. Sent-Jud ruhiy kasalxonasi. Siz oxirgi jarrohsiz. Protokol 7 kuchga kirdi... Eshiklar tashqaridan zanjirlandi. Bemorlar bir xonada. Va koridorda kimdir... sizni eslayotgan ovoz bilan kelmoqda.",
     en: '4 November 1987. St. Jude asylum. You are the last surgeon left. Protocol 7 came into force... The doors were chained from the outside. The patients are in one room. And in the corridor, someone is coming - in a voice that remembers you.',

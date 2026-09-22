@@ -50,7 +50,7 @@ const LEVELS: LevelBand[] = [
   },
   {
     name: { uz: 'B1 PODVAL', en: 'B1 BASEMENT', ru: 'Б1 ПОДВАЛ' },
-    sub: { uz: 'qozonxona va morgniy', en: 'boiler room and morgue', ru: 'котельная и морг' },
+    sub: { uz: 'qozonxona va morg', en: 'boiler room and morgue', ru: 'котельная и морг' },
     row1: 44,
     row2: 49,
   },

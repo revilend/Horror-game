@@ -1,7 +1,15 @@
 /**
- * Procedural horror audio built on the Web Audio API.
- * Everything is synthesised - no audio files are shipped with the game.
+ * Horror audio built on the Web Audio API.
+ *
+ * The room tone, the saw, the footsteps - all synthesised. The two music
+ * tracks are the one exception: `bgm.mp3` and `chase.mp3` ship with the
+ * game, are pre-buffered the moment audio initialises, and are crossfaded by
+ * the state machine below. If either file fails to load, every path falls
+ * back to the synthesised bed, so a missing file degrades the mix rather
+ * than the run.
  */
+import bgmTrackUrl from '../../bgm.mp3?url';
+import chaseTrackUrl from '../../chase.mp3?url';
 
 export class HorrorAudio {
   private ctx: AudioContext | null = null;
@@ -33,6 +41,15 @@ export class HorrorAudio {
   private chaseOscs: OscillatorNode[] = [];
   private chaseRunning = false;
   private musicState: 'explore' | 'chase' = 'explore';
+  /** The shipped music files, streamed through the same master bus. */
+  private bgmEl: HTMLAudioElement | null = null;
+  private chaseEl: HTMLAudioElement | null = null;
+  private bgmTrackGain: GainNode | null = null;
+  private chaseTrackGain: GainNode | null = null;
+  /** False once either file fails to load - the procedural bed carries it. */
+  private tracksOk = false;
+  /** True between startAmbience() and stopAmbience(): the run is live. */
+  private musicEnabled = false;
 
   /** Volume targets for the two tracks. */
   private static readonly EXPLORE_BGM_VOL = 0.35;
@@ -55,6 +72,7 @@ export class HorrorAudio {
 
     this.isInitialized = true;
     this.installVisibilityHandler();
+    this.setupMusicTracks();
   }
 
   resume(): void {
@@ -80,9 +98,15 @@ export class HorrorAudio {
   unlock(): Promise<boolean> {
     const ctx = this.ctx;
     if (!ctx) return Promise.resolve(false);
+    // A live context may still owe a play() the browser refused while the tab
+    // was parked - the gesture this arrives in is what clears that debt.
+    this.ensureMusicPlaying();
     if (ctx.state === 'running') return Promise.resolve(true);
     return ctx.resume().then(
-      () => ctx.state === 'running',
+      () => {
+        this.ensureMusicPlaying();
+        return ctx.state === 'running';
+      },
       () => false,
     );
   }
@@ -127,6 +151,22 @@ export class HorrorAudio {
     // Always re-raise the gain: after `stopAmbience()` (death / victory) the bed
     // is silent, and a restart must bring it back.
     this.ambienceGain.gain.setTargetAtTime(0.45, this.ctx.currentTime, 1.2);
+
+    // Every run begins in the explore state. If the shipped tracks are already
+    // buffered they take over as the music; otherwise the warm-up listener
+    // starts them the moment they are, and the ambience bed carries the room
+    // until then.
+    this.musicEnabled = true;
+    this.musicState = 'explore';
+    const now = this.ctx.currentTime;
+    if (this.chaseGain) this.ramp(this.chaseGain.gain, 0, now, 0.4);
+    if (this.bgmTrackGain && this.chaseTrackGain && this.filesReady()) {
+      this.ramp(this.chaseTrackGain.gain, 0, now, 0.4);
+      this.ramp(this.bgmTrackGain.gain, HorrorAudio.EXPLORE_BGM_VOL, now, 1.2);
+      this.ensureMusicPlaying();
+    } else {
+      this.pauseMusic();
+    }
   }
 
   private buildAmbienceGraph(): void {
@@ -267,7 +307,23 @@ export class HorrorAudio {
 
   stopAmbience(): void {
     if (!this.ctx || !this.ambienceGain) return;
-    this.ambienceGain.gain.setTargetAtTime(0, this.ctx.currentTime, 1);
+    const now = this.ctx.currentTime;
+    this.ambienceGain.gain.setTargetAtTime(0, now, 1);
+
+    // Death and victory end the run: no track may keep playing under the end
+    // screen. The elements pause outright; the synthesised bed just goes
+    // quiet, because its nodes belong to the context and are reused next run.
+    this.musicEnabled = false;
+    this.pauseMusic();
+    if (this.bgmTrackGain) {
+      this.bgmTrackGain.gain.cancelScheduledValues(now);
+      this.bgmTrackGain.gain.value = 0;
+    }
+    if (this.chaseTrackGain) {
+      this.chaseTrackGain.gain.cancelScheduledValues(now);
+      this.chaseTrackGain.gain.value = 0;
+    }
+    if (this.chaseGain) this.ramp(this.chaseGain.gain, 0, now, 0.4);
   }
 
   /** Random distant screech. */
@@ -1849,6 +1905,100 @@ export class HorrorAudio {
     noiseSource.start();
   }
 
+  /** Cancel-and-ramp a gain so two crossfades can never fight over it. */
+  private ramp(param: AudioParam, to: number, now: number, seconds: number): void {
+    param.cancelScheduledValues(now);
+    param.setValueAtTime(param.value, now);
+    param.linearRampToValueAtTime(to, now + seconds);
+  }
+
+  /** True when both shipped tracks have buffered enough to sound instantly. */
+  private filesReady(): boolean {
+    if (!this.tracksOk || !this.bgmEl || !this.chaseEl) return false;
+    // HAVE_CURRENT_DATA: enough decoded to start without a fetch wait.
+    return this.bgmEl.readyState >= 2 && this.chaseEl.readyState >= 2;
+  }
+
+  /**
+   * Wires bgm.mp3 and chase.mp3 into the graph ahead of time.
+   *
+   * Both elements are created with preload='auto' as soon as audio
+   * initialises, so the files sit in the browser's media cache long before
+   * the doctor first spots the player - a crossfade then has nothing left to
+   * wait on. Each element runs through its own gain into the master bus,
+   * which is both what the crossfades move and what setVolume / setMuted
+   * already control.
+   *
+   * A missing or undecodable file is not an error: `tracksOk` stays false
+   * and every crossfade falls back to the synthesised bed.
+   */
+  private setupMusicTracks(): void {
+    const ctx = this.ctx;
+    if (!ctx || this.bgmEl || !this.masterGain) return;
+    try {
+      const bgm = new Audio(bgmTrackUrl);
+      const chase = new Audio(chaseTrackUrl);
+      for (const el of [bgm, chase]) {
+        el.preload = 'auto';
+        el.loop = true;
+        el.volume = 1;
+        el.load();
+      }
+
+      const bgmTap = ctx.createMediaElementSource(bgm);
+      const chaseTap = ctx.createMediaElementSource(chase);
+      this.bgmTrackGain = ctx.createGain();
+      this.chaseTrackGain = ctx.createGain();
+      this.bgmTrackGain.gain.value = 0;
+      this.chaseTrackGain.gain.value = 0;
+      bgmTap.connect(this.bgmTrackGain).connect(this.masterGain);
+      chaseTap.connect(this.chaseTrackGain).connect(this.masterGain);
+      this.bgmEl = bgm;
+      this.chaseEl = chase;
+      this.tracksOk = true;
+
+      const degrade = () => {
+        this.tracksOk = false;
+      };
+      bgm.addEventListener('error', degrade);
+      chase.addEventListener('error', degrade);
+
+      // If the files finish buffering while a run is already underway in the
+      // explore state, bring bgm up right then instead of waiting for the
+      // next state change to notice they arrived.
+      const warmedUp = () => {
+        if (!this.musicEnabled || this.musicState !== 'explore') return;
+        if (!this.bgmTrackGain || !this.chaseTrackGain || !this.filesReady()) return;
+        const t = ctx.currentTime;
+        this.ramp(this.chaseTrackGain.gain, 0, t, 0.4);
+        this.ramp(this.bgmTrackGain.gain, HorrorAudio.EXPLORE_BGM_VOL, t, 1.5);
+        this.ensureMusicPlaying();
+      };
+      bgm.addEventListener('canplaythrough', warmedUp);
+      chase.addEventListener('canplaythrough', warmedUp);
+    } catch {
+      this.tracksOk = false;
+    }
+  }
+
+  /** Starts whichever elements the current state expects to be audible. */
+  private ensureMusicPlaying(): void {
+    if (!this.musicEnabled || !this.tracksOk) return;
+    for (const el of [this.bgmEl, this.chaseEl]) {
+      if (el && el.paused) {
+        void el.play().catch(() => {
+          /* autoplay gate - retried on the next real gesture */
+        });
+      }
+    }
+  }
+
+  /** Hard-pauses both tracks (tab hidden, run over, synth fallback). */
+  private pauseMusic(): void {
+    this.bgmEl?.pause();
+    this.chaseEl?.pause();
+  }
+
   /**
    * Smooth crossfade from exploration to chase music.
    * Fades out the ambience over 0.5s and brings in the chase track.
@@ -1858,35 +2008,31 @@ export class HorrorAudio {
     const ctx = this.ctx;
     if (!ctx) return;
 
-    if (!this.chaseRunning) {
-      this.buildChaseMusicGraph();
-      this.chaseRunning = true;
-    }
-
     this.musicState = 'chase';
     const now = ctx.currentTime;
 
-    // Fade out exploration ambience (0.5s)
-    if (this.ambienceGain) {
-      this.ambienceGain.gain.cancelScheduledValues(now);
-      this.ambienceGain.gain.setValueAtTime(
-        this.ambienceGain.gain.value,
-        now,
-      );
-      this.ambienceGain.gain.linearRampToValueAtTime(0, now + 0.5);
-    }
+    if (this.bgmTrackGain && this.chaseTrackGain && this.filesReady()) {
+      // The shipped tracks: bgm.mp3 ducks out over half a second while
+      // chase.mp3 comes in at pursuit volume. Both elements keep looping
+      // underneath, so the switch costs no seek and never stutters.
+      this.ramp(this.bgmTrackGain.gain, 0, now, 0.5);
+      this.ramp(this.chaseTrackGain.gain, HorrorAudio.CHASE_MUSIC_VOL, now, 0.5);
+      if (this.ambienceGain) this.ramp(this.ambienceGain.gain, 0.45, now, 0.5);
+      this.ensureMusicPlaying();
+    } else {
+      if (!this.chaseRunning) {
+        this.buildChaseMusicGraph();
+        this.chaseRunning = true;
+      }
 
-    // Fade in chase music (0.5s)
-    if (this.chaseGain) {
-      this.chaseGain.gain.cancelScheduledValues(now);
-      this.chaseGain.gain.setValueAtTime(
-        this.chaseGain.gain.value,
-        now,
-      );
-      this.chaseGain.gain.linearRampToValueAtTime(
-        HorrorAudio.CHASE_MUSIC_VOL,
-        now + 0.5,
-      );
+      // Synth fallback: the ambience bed *is* the explore track here, so it
+      // ducks out (0.5s) while the procedural chase bed comes up (0.5s).
+      // Any file track that finished loading meanwhile is held silent.
+      if (this.ambienceGain) this.ramp(this.ambienceGain.gain, 0, now, 0.5);
+      if (this.chaseGain) this.ramp(this.chaseGain.gain, HorrorAudio.CHASE_MUSIC_VOL, now, 0.5);
+      if (this.bgmTrackGain) this.ramp(this.bgmTrackGain.gain, 0, now, 0.5);
+      if (this.chaseTrackGain) this.ramp(this.chaseTrackGain.gain, 0, now, 0.5);
+      this.pauseMusic();
     }
 
     // Bone-saw rev on commitment to the chase
@@ -1904,28 +2050,25 @@ export class HorrorAudio {
     this.musicState = 'explore';
     const now = ctx.currentTime;
 
-    // Fade out chase music (1s)
-    if (this.chaseGain) {
-      this.chaseGain.gain.cancelScheduledValues(now);
-      this.chaseGain.gain.setValueAtTime(
-        this.chaseGain.gain.value,
-        now,
-      );
-      this.chaseGain.gain.linearRampToValueAtTime(0, now + 1);
+    if (this.bgmTrackGain && this.chaseTrackGain && this.filesReady()) {
+      // One full second back: chase.mp3 winds down, bgm.mp3 rises to its
+      // explore level, and the room-tone bed comes back in under them. Both
+      // elements kept looping through the chase, so returning costs no seek.
+      this.ramp(this.chaseTrackGain.gain, 0, now, 1);
+      this.ramp(this.bgmTrackGain.gain, HorrorAudio.EXPLORE_BGM_VOL, now, 1);
+      if (this.ambienceGain) this.ramp(this.ambienceGain.gain, 0.45, now, 1);
+      this.ensureMusicPlaying();
+      return;
     }
 
-    // Fade in exploration ambience (1s)
-    if (this.ambienceGain) {
-      this.ambienceGain.gain.cancelScheduledValues(now);
-      this.ambienceGain.gain.setValueAtTime(
-        this.ambienceGain.gain.value,
-        now,
-      );
-      this.ambienceGain.gain.linearRampToValueAtTime(
-        HorrorAudio.EXPLORE_BGM_VOL,
-        now + 1,
-      );
-    }
+    // Synth fallback: chase bed out over 1s, ambience bed back to its
+    // explore level over 1s, file tracks (if any finished loading) held
+    // silent until a later crossfade can adopt them cleanly.
+    if (this.chaseGain) this.ramp(this.chaseGain.gain, 0, now, 1);
+    if (this.ambienceGain) this.ramp(this.ambienceGain.gain, HorrorAudio.EXPLORE_BGM_VOL, now, 1);
+    if (this.bgmTrackGain) this.ramp(this.bgmTrackGain.gain, 0, now, 1);
+    if (this.chaseTrackGain) this.ramp(this.chaseTrackGain.gain, 0, now, 1);
+    this.pauseMusic();
   }
 
   /** Current music state for external queries. */
@@ -1939,10 +2082,21 @@ export class HorrorAudio {
   private installVisibilityHandler(): void {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
+        // Tab hidden or phone slept: park the context *and* both tracks, so
+        // nothing keeps decoding while the game is not being watched.
+        this.pauseMusic();
         this.suspend();
       } else {
         this.resume();
+        this.ensureMusicPlaying();
       }
+    });
+
+    // iOS often refuses the play() a visibility handler issues, because
+    // coming back from the background is not a user gesture. Every real tap
+    // is, so any tap quietly retries whatever the browser turned down.
+    document.addEventListener('pointerdown', () => this.ensureMusicPlaying(), {
+      passive: true,
     });
   }
 
@@ -1956,10 +2110,19 @@ export class HorrorAudio {
     } catch {
       /* oscillators may already be stopped */
     }
+    this.pauseMusic();
     void this.ctx?.close();
     this.isInitialized = false;
     this.ambienceRunning = false;
     this.chaseRunning = false;
     this.musicState = 'explore';
+    this.musicEnabled = false;
+    // Media-element taps belong to the closed context and can never be
+    // re-created for the same element, so a later init() starts fresh.
+    this.bgmEl = null;
+    this.chaseEl = null;
+    this.bgmTrackGain = null;
+    this.chaseTrackGain = null;
+    this.tracksOk = false;
   }
 }

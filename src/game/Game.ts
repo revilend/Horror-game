@@ -3023,6 +3023,7 @@ export class Game {
     this.invulnerable = 0;
     this.danger = 0;
     this.heartbeatTimer = 0;
+    this.wasChasing = false;
     this.shakeTime = 0;
     this.elapsed = 0;
     this.phase = 'power';
@@ -3828,10 +3829,26 @@ export class Game {
   private updateDanger(dt: number): void {
     if (!this.monster || !this.player) return;
 
+    // Two-track music state machine. The moment he commits to the run, swap
+    // to the chase track: half a second of crossfade, a red vignette spike
+    // and a camera kick. He gives up after five seconds without line of
+    // sight (or a locker in the way), which crossfades back over a second.
+    const pursuing = this.monster.isChasing;
+    if (pursuing !== this.wasChasing) {
+      this.wasChasing = pursuing;
+      if (pursuing) {
+        this.audio?.crossfadeToChase();
+        this.danger = Math.max(this.danger, 0.75);
+        this.addShake(0.3, 0.7);
+      } else {
+        this.audio?.crossfadeToExplore();
+      }
+    }
+
     const distance = this.monster.distanceTo(this.player.position);
     // The fear radius is fourteen metres: 2.5 (touching) + 11.5 of approach.
     const proximity = 1 - Math.min(1, Math.max(0, (distance - 2.5) / 11.5));
-    const chasing = this.monster.isChasing ? 0.35 : 0;
+    const chasing = pursuing ? 0.35 : 0;
     const target = Math.min(1, proximity * 0.75 + chasing);
 
     this.danger += (target - this.danger) * Math.min(1, dt * 2.5);
