@@ -65,6 +65,7 @@ import {
 // one index can describe a page of Ren's journal or a letter off a ward floor.
 import { LETTER_INDEX_OFFSET, LETTERS, READABLES as NOTES } from './notes';
 import { placeArchiveLetters } from './Letters';
+import { setVoiceEnabled, speakLine, stopVoice } from './Voice';
 
 /** A pickup lying in the world, waiting to be taken by hand. */
 interface PickupRecord {
@@ -140,6 +141,8 @@ interface Settings {
   sensitivity: number;
   quality: Quality;
   muted: boolean;
+  /** Read the letters and the scripted lines aloud. */
+  voice: boolean;
 }
 
 const SETTINGS_KEY = 'dark-asylum.settings';
@@ -284,7 +287,7 @@ export class Game {
   private clock = new THREE.Clock();
   private animationId = 0;
 
-  private settings: Settings = { sensitivity: 1, quality: 'high', muted: false };
+  private settings: Settings = { sensitivity: 1, quality: 'high', muted: false, voice: true };
 
   // DOM elements
   private loadingBar: HTMLElement | null = null;
@@ -543,12 +546,16 @@ export class Game {
     if (document.pointerLockElement) document.exitPointerLock();
 
     if (letter) this.setQuestFlag({ letters: this.letterRead.size });
+    // The sheet is read aloud under the paper: the heading first, then the
+    // page itself, in whichever language is on screen.
+    speakLine(`${L(entry.title)}. ${L(entry.text)}`);
     this.updateObjective();
   }
 
   /** Puts the document down. Safe to call when nothing is open. */
   private closeLetter(): void {
     if (!this.letterReaderOpen) return;
+    stopVoice();
     this.letterReaderOpen = false;
     this.letterReader?.classList.add('hidden');
     if (this.player) this.player.inputDisabled = false;
@@ -737,6 +744,7 @@ export class Game {
     this.prepareJumpscareFace();
     this.settings = this.loadSettings();
     this.syncSettingsUI();
+    this.applyVoice();
     this.installLanguageUI();
     this.installRotateGuard();
     this.installLiftUI();
@@ -928,7 +936,7 @@ export class Game {
   }
 
   private loadSettings(): Settings {
-    const defaults: Settings = { sensitivity: 1, quality: this.defaultQuality(), muted: false };
+    const defaults: Settings = { sensitivity: 1, quality: this.defaultQuality(), muted: false, voice: true };
 
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
@@ -941,6 +949,7 @@ export class Game {
             ? parsed.quality
             : defaults.quality,
         muted: typeof parsed.muted === 'boolean' ? parsed.muted : defaults.muted,
+        voice: typeof parsed.voice === 'boolean' ? parsed.voice : defaults.voice,
       };
     } catch {
       return defaults;
@@ -965,6 +974,17 @@ export class Game {
     document.querySelectorAll<HTMLInputElement>('.setting-muted').forEach((input) => {
       input.checked = this.settings.muted;
     });
+    document.querySelectorAll<HTMLInputElement>('.setting-voice').forEach((input) => {
+      input.checked = this.settings.voice;
+    });
+  }
+
+  /**
+   * The voice-over follows its own switch, and stands down entirely while the
+   * game is muted - silence has to mean silence.
+   */
+  private applyVoice(): void {
+    setVoiceEnabled(this.settings.voice && !this.settings.muted);
   }
 
   private applyQuality(): void {
@@ -1422,10 +1442,86 @@ export class Game {
       input.addEventListener('change', () => {
         this.settings.muted = input.checked;
         this.audio?.setMuted(this.settings.muted);
+        this.applyVoice();
         this.syncSettingsUI();
         this.saveSettings();
       });
     });
+    document.querySelectorAll<HTMLInputElement>('.setting-voice').forEach((input) => {
+      input.addEventListener('change', () => {
+        this.settings.voice = input.checked;
+        this.applyVoice();
+        this.syncSettingsUI();
+        this.saveSettings();
+      });
+    });
+
+    this.installVoiceHooks();
+  }
+
+  /**
+   * Reads the lines the player is meant to *hear* rather than just read.
+   *
+   * The phone dispatch, the intro whispers, the wake captions, the note toast
+   * and the intro tape all surface through a handful of instance methods whose
+   * call sites are spread across the whole class, so the methods are wrapped
+   * once here instead: whatever passes through them is spoken aloud too, in
+   * whichever language is on screen. Ordinary HUD hints stay silent.
+   */
+  private installVoiceHooks(): void {
+    // Atmosphere rather than bookkeeping - lines that carry story, not progress.
+    const VOICED_KEYS = [
+      'intro.drag', 'intro.wall', 'intro.whisper',
+      'msg.phoneDispatch', 'msg.phoneReplay', 'msg.phoneRepaired',
+      'msg.powerOn', 'msg.outdoors',
+      'msg.lightsOn', 'msg.lightsOff', 'msg.tapOn', 'msg.tapOff',
+      'msg.radioOn', 'msg.radioOff', 'msg.mirror', 'msg.mirrorAgain',
+      'msg.cotEmpty', 'msg.lockpick', 'msg.xrayCode', 'msg.cctvOn',
+      'msg.glass', 'msg.glassVial', 'msg.pried', 'msg.binFind',
+      'msg.paintingAside', 'msg.extinguisher', 'msg.chainAcid',
+      'msg.chainCut', 'msg.allKeys', 'msg.exitOpen', 'msg.gateOpen',
+      'msg.vanRunning',
+    ];
+
+    const showMessage = this.showMessage.bind(this);
+    this.showMessage = (text: string, duration = 2600): void => {
+      if (VOICED_KEYS.some((key) => t(key) === text)) {
+        // The dispatcher comes down a wire: lower and slower, like a tape loop.
+        const phone = text === t('msg.phoneDispatch') || text === t('msg.phoneReplay');
+        speakLine(text, phone ? 'phone' : 'narration');
+      }
+      showMessage(text, duration);
+    };
+
+    const showWakeCaption = this.showWakeCaption.bind(this);
+    this.showWakeCaption = (text: string, holdMs: number): void => {
+      speakLine(text);
+      showWakeCaption(text, holdMs);
+    };
+
+    // A freshly picked note flashes its toast; the sheet in the journal reads
+    // the same page again later through openDocument(), which speaks for itself.
+    const showNote = this.showNote.bind(this);
+    this.showNote = (noteIndex: number): void => {
+      showNote(noteIndex);
+      const index = noteIndex >= 0 && noteIndex < NOTES.length ? noteIndex : this.notesCollected - 1;
+      const note = NOTES[index];
+      if (note) speakLine(`${L(note.title)}. ${L(note.text)}`);
+    };
+
+    // Every intro exit path goes through forceEndIntro(), so cutting the voice
+    // there covers skip, finish and the failsafe watchdog alike.
+    const forceEndIntro = this.forceEndIntro.bind(this);
+    this.forceEndIntro = (reason) => {
+      stopVoice();
+      forceEndIntro(reason);
+    };
+
+    const pauseGame = this.pauseGame.bind(this);
+    this.pauseGame = () => {
+      stopVoice();
+      pauseGame();
+    };
   }
 
   // --- Run lifecycle -------------------------------------------------------
@@ -1434,6 +1530,9 @@ export class Game {
 
   /** Typewriter effect: types `text` into `el` char-by-char, returns when done. */
   private async typewriterEffect(el: HTMLElement, text: string, speed = 38): Promise<void> {
+    // The intro tape narrates itself as it types; skipping the cutscene stops
+    // the voice along with the text, through the forceEndIntro() hook above.
+    if (el === this.introTypewriterText) speakLine(text);
     el.textContent = '';
     const cursor = document.createElement('span');
     cursor.className = 'typewriter-cursor';

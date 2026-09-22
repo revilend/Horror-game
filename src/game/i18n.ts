@@ -206,6 +206,12 @@ const UI: Record<string, Localized> = {
   'menu.sensitivity': { uz: 'Sezgirlik', en: 'Sensitivity', ru: 'Чувствительность' },
   'menu.graphics': { uz: 'Grafika', en: 'Graphics', ru: 'Графика' },
   'menu.sound': { uz: 'Ovoz', en: 'Sound', ru: 'Звук' },
+  'menu.voice': { uz: "Ovozli o'qish", en: 'Voice-over', ru: 'Озвучка текста' },
+  'menu.voiceHint': {
+    uz: "Xatlar va o'yin gaplarini ovozli o'qish",
+    en: 'Read the letters and the story lines aloud',
+    ru: 'Читать письма и реплики вслух',
+  },
   'menu.language': { uz: 'Til', en: 'Language', ru: 'Язык' },
   'menu.quality.low': { uz: 'Past', en: 'Low', ru: 'Низкое' },
   'menu.quality.medium': { uz: "O'rta", en: 'Medium', ru: 'Среднее' },
