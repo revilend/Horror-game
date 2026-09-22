@@ -125,10 +125,45 @@ const UI: Record<string, Localized> = {
     ru: 'ПРОТОКОЛ 7 — ЦЕПОЧКА ЗАДАЧ',
   },
   'journal.questProgress': { uz: '{done}/{total} bajarildi', en: '{done}/{total} done', ru: '{done}/{total} выполнено' },
+  'journal.sideHead': {
+    uz: "QO'SHIMCHA TOPSHIRIQLAR — IXTIYORIY",
+    en: 'SIDE OBJECTIVES — OPTIONAL',
+    ru: 'ДОПОЛНИТЕЛЬНЫЕ ЗАДАЧИ — ПО ЖЕЛАНИЮ',
+  },
+  'side.notes': {
+    uz: "Barcha qaydlarni o'qing — {done}/{total}",
+    en: 'Read every note — {done}/{total}',
+    ru: 'Прочитайте все записки — {done}/{total}',
+  },
+  'side.letters': {
+    uz: "Yashiringan 5 ta xatni o'qing — {done}/{total}",
+    en: 'Read all five hidden letters — {done}/{total}',
+    ru: 'Прочитайте все пять писем — {done}/{total}',
+  },
+  'side.rooms': {
+    uz: 'Har bir xonaga kiring — {done}/{total}',
+    en: 'Set foot in every room — {done}/{total}',
+    ru: 'Побывайте в каждой комнате — {done}/{total}',
+  },
+  'side.glass': {
+    uz: "Shishalarni otib, uni chalg'iting — {done}/{total}",
+    en: 'Throw glass to pull him off you — {done}/{total}',
+    ru: 'Бросайте стекло, чтобы отвлечь его — {done}/{total}',
+  },
+  'side.phones': {
+    uz: 'Devordagi telefonlarni tuzating — {done}/{total}',
+    en: 'Splice the dead ward phones — {done}/{total}',
+    ru: 'Почините мёртвые телефоны — {done}/{total}',
+  },
+  'side.hides': {
+    uz: "Shkaflarda yashirinib, u o'tishini kuting — {done}/{total}",
+    en: 'Hide in the wardrobes and let him pass — {done}/{total}',
+    ru: 'Прячьтесь в шкафах и ждите — {done}/{total}',
+  },
   'journal.seal': {
-    uz: "O'RNINGIZDAN TURISH VA O'YINNI BOSHLASH",
+    uz: 'KARAVOTDAN TURISH VA BOSHLASH',
     en: 'RISE FROM THE BED AND BEGIN',
-    ru: 'ПОДНЯТЬСЯ И НАЧАТЬ',
+    ru: 'ПОДНЯТЬСЯ С КОЙКИ И НАЧАТЬ',
   },
   'journal.warn1': {
     uz: 'Dr. Aris tunda ko‘rikdan o‘tadi. Eshikni yopib, chiroqni o‘chiring.',
@@ -150,6 +185,17 @@ const UI: Record<string, Localized> = {
     uz: "Siz Doktor Elias Ren — Protokol 7 ni imzolagan oxirgi jarroh. 1987-yil 4-noyabrda bemorlar bir xonaga yopildi, kasalxona qulflandi va hech kim chiqmadi. Siz ertalab yolg'iz uyg'ondingiz, eshiklar bog'langan, va koridorlardagi tovushlar sizni tanigan ovozda chaqiryapti. U sizni eslaydi. U sizni kutmoqda. Uchta kalitni toping, saqlagichni ulang va darvozadan chiqib ketishdan oldin u sizni topmasin.",
     en: 'You are Dr Elias Ren - the last surgeon to sign Protocol 7. On 4 November 1987 the patients were sealed into one room, the hospital was locked, and nobody came out. You woke alone this morning: the doors are chained and the sounds in the corridors call you in a voice you know. He remembers you. He is waiting for you. Find three keys, restore the breaker, and get through the gate before he finds you first.',
     ru: 'Вы — доктор Элиас Рен, последний хирург, подписавший Протокол 7. 4 ноября 1987 года пациентов заперли в одной палате, больницу закрыли, и никто не вышел. Сегодня утром вы проснулись один: двери в цепях, а голоса в коридорах зовут вас знакомым голосом. Он помнит вас. Он ждёт вас. Найдите три ключа, восстановите питание и уйдите через ворота раньше, чем он найдёт вас.',
+  },
+  // The wake scene before the chart is opened: the patient coming round.
+  'menu.wake1': {
+    uz: "Boshim... boshim yorilib ketayapti. Xona 404. Nega hamma narsa qorong'i?",
+    en: 'My head... my head is splitting. Room 404. Why is everything dark?',
+    ru: 'Голова... раскалывается. Палата 404. Почему всё темно?',
+  },
+  'menu.wake2': {
+    uz: "Qo'limda qog'oz bor — Protokol 7. Avval o'qib chiqaman, keyin karavotdan turaman.",
+    en: 'There is a page in my hands — Protocol 7. I will read it, then rise from the bed.',
+    ru: 'У меня в руках лист — Протокол 7. Сначала прочту, потом встану с койки.',
   },
   'menu.start': { uz: 'BOSHLASH', en: 'START', ru: 'НАЧАТЬ' },
   'menu.continue': {

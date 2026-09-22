@@ -23,8 +23,8 @@
   <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png" />
   <link rel="manifest" href="./manifest.webmanifest" />
-  <script type="module" crossorigin src="./assets/index-DkHKJrrh.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-XpgvIXP4.css">
+  <script type="module" crossorigin src="./assets/index-B83CVBaP.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-B94b2EhZ.css">
 </head>
 <body class="unbooted">
   <div id="loading-screen">
@@ -81,6 +81,11 @@
             <span id="journal-quest-progress" class="journal-quest-progress"></span>
           </div>
           <ol class="journal-quests" id="journal-quests"></ol>
+          <div class="journal-quest-head side-head">
+            <span data-i18n="journal.sideHead">QO'SHIMCHA TOPSHIRIQLAR — IXTIYORIY</span>
+            <span id="journal-side-progress" class="journal-quest-progress"></span>
+          </div>
+          <ul class="journal-quests journal-side" id="journal-side"></ul>
         </section>
 
         <section class="journal-panel" data-jpanel="settings">
@@ -191,6 +196,8 @@
   <div id="lightning-flash"></div>
 
   <!-- Cinematic prologue overlays -->
+  <!-- Subtitle for the wake-in-404 scene, before the chart is opened -->
+  <div id="wake-caption" class="wake-caption" aria-live="polite"></div>
   <div id="intro-eyelid" class="hidden">
     <div class="eyelid-top"></div>
     <div class="eyelid-bottom"></div>

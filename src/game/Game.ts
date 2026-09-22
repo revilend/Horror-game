@@ -172,6 +172,11 @@ const INTRO_STALL_MS = 5000;
 /** Ambient floor enforced once the intro ends: the room must be readable. */
 const GAMEPLAY_AMBIENT_FLOOR = 0.85;
 
+/** Optional-objective goals, shown on the chart beside the main chain. */
+const SIDE_GLASS_GOAL = 6;
+const SIDE_PHONES_GOAL = 2;
+const SIDE_HIDES_GOAL = 3;
+
 /**
  * The story, told through twenty notes (see notes.ts).
  */
@@ -227,6 +232,19 @@ export class Game {
   private keysCollected = 0;
   private notesCollected = 0;
   private cardCollected = false;
+
+  /**
+   * Optional side-objective tallies.
+   *
+   * The main chain is the spine of the run; these are the extra things worth
+   * doing along the way - reading every note, splicing the dead ward phones,
+   * throwing a shelf clear and living to hide another day. They turn a straight
+   * line into a hospital you actually search, and they are tracked on the chart
+   * beside the chain.
+   */
+  private glassThrown = 0;
+  private phonesRepaired = 0;
+  private lockerHides = 0;
 
   /** Substation lever thrown: the gate motor has power. */
   private substationOn = false;
@@ -706,6 +724,11 @@ export class Game {
   private introTypewriterLabel: HTMLElement | null = null;
   private introTypewriterText: HTMLElement | null = null;
   private skipIntroBtn: HTMLElement | null = null;
+  /** The subtitle line shown while the patient comes round in Room 404. */
+  private wakeCaption: HTMLElement | null = null;
+  private wakeCaptionTimeout: number | null = null;
+  /** Set by any input during the wake scene, so it can be skipped. */
+  private wakeSkipRequested = false;
   /** The live SKIP handler, held so it can be detached when the intro ends. */
   private introSkipHandler: (() => void) | null = null;
 
@@ -819,6 +842,19 @@ export class Game {
     this.updateObjective();
 
     this.loadingScreen?.classList.add('hidden');
+
+    // The chart is a page in the patient's hands, so before it is handed over
+    // the player comes round on the ward bed in Room 404: a low, throbbing
+    // viewpoint, a headache, and the room lit only enough to make out where
+    // they are. The menu only opens once they have sat up with the file.
+    try {
+      await this.playMenuWakeScene();
+    } catch (error) {
+      console.warn('Wake scene failed - showing the chart directly:', error);
+    }
+
+    this.renderJournalQuests();
+    document.body.classList.add('holding-paper');
     this.startScreen?.classList.remove('hidden');
     this.state = 'menu';
   }
@@ -874,6 +910,7 @@ export class Game {
     this.introTypewriterLabel = id('intro-typewriter')?.querySelector('.typewriter-label') as HTMLElement | null;
     this.introTypewriterText = id('intro-typewriter')?.querySelector('.typewriter-text') as HTMLElement | null;
     this.skipIntroBtn = id('skip-intro');
+    this.wakeCaption = id('wake-caption');
   }
 
   private yieldToBrowser(): Promise<void> {
@@ -1158,6 +1195,74 @@ export class Game {
       progress.textContent = t('journal.questProgress', {
         done,
         total: QUEST_STAGES.length,
+      });
+    }
+
+    this.renderJournalSide();
+  }
+
+  /**
+   * The optional objectives: what a fuller run looks like.
+   *
+   * None of these gate the escape - they are the reasons to open one more
+   * drawer, take one more corridor and not simply sprint the chain. They are
+   * read live off the run's own counters, so nothing here can drift from what
+   * the player has actually done.
+   */
+  private renderJournalSide(): void {
+    const list = document.getElementById('journal-side');
+    if (!list) return;
+
+    const roomsTotal = this.mapInfo?.rooms.length ?? 0;
+    const goals: Array<{ text: string; done: boolean }> = [
+      {
+        text: t('side.notes', { done: this.notesCollected, total: TOTAL_NOTES }),
+        done: this.notesCollected >= TOTAL_NOTES,
+      },
+      {
+        text: t('side.letters', { done: this.questFlags.letters, total: 5 }),
+        done: this.questFlags.letters >= 5,
+      },
+      {
+        text: t('side.rooms', { done: this.visitedRooms.size, total: roomsTotal }),
+        done: roomsTotal > 0 && this.visitedRooms.size >= roomsTotal,
+      },
+      {
+        text: t('side.glass', { done: this.glassThrown, total: SIDE_GLASS_GOAL }),
+        done: this.glassThrown >= SIDE_GLASS_GOAL,
+      },
+      {
+        text: t('side.phones', { done: this.phonesRepaired, total: SIDE_PHONES_GOAL }),
+        done: this.phonesRepaired >= SIDE_PHONES_GOAL,
+      },
+      {
+        text: t('side.hides', { done: this.lockerHides, total: SIDE_HIDES_GOAL }),
+        done: this.lockerHides >= SIDE_HIDES_GOAL,
+      },
+    ];
+
+    list.replaceChildren();
+    goals.forEach((goal) => {
+      const item = document.createElement('li');
+      item.className = goal.done ? 'done' : 'locked';
+
+      const mark = document.createElement('span');
+      mark.className = 'quest-mark';
+      mark.textContent = goal.done ? '\u2713' : '\u25CB';
+
+      const label = document.createElement('span');
+      label.className = 'quest-text';
+      label.textContent = goal.text;
+
+      item.append(mark, label);
+      list.append(item);
+    });
+
+    const progress = document.getElementById('journal-side-progress');
+    if (progress) {
+      progress.textContent = t('journal.questProgress', {
+        done: goals.filter((goal) => goal.done).length,
+        total: goals.length,
       });
     }
   }
@@ -1695,6 +1800,102 @@ export class Game {
     monster.setGroundHeight(originalHeight);
   }
 
+  /**
+   * The scene before the chart: the patient coming round in Room 404.
+   *
+   * The menu is a piece of paper, so the player has to be holding it. Before it
+   * is handed over they wake slow and concussed on the ward bed - a low,
+   * throbbing camera, a heartbeat and a room lit only enough to read - and by
+   * the time the file is open in their hands the room reads as where they are,
+   * not as a menu page over black.
+   */
+  private async playMenuWakeScene(): Promise<void> {
+    const map = this.mapInfo;
+    if (!map || !this.camera || !this.player) return;
+
+    const spawn = map.playerSpawn;
+    this.player.inputDisabled = true;
+    this.player.reset(map.grid, spawn);
+
+    // Just enough light to read the room by: a dying ward lamp and the torch
+    // fallen across the patient's knees.
+    this.effects?.setAmbientFloor(GAMEPLAY_AMBIENT_FLOOR * 0.4);
+    this.flashlightOn = true;
+    this.flashlightBattery = Math.max(this.flashlightBattery, 45);
+    if (this.flashlight) {
+      this.flashlight.visible = true;
+      this.flashlight.intensity = 2.6;
+    }
+
+    // The in-engine frames are drawn by the intro's own render loop: the
+    // gameplay loop bails out while the state is still 'menu'.
+    this.startIntroRendering();
+    this.wakeSkipRequested = false;
+    // Any input ends the beating: nobody should be locked out of the menu.
+    const skip = (): void => { this.wakeSkipRequested = true; };
+    window.addEventListener('pointerdown', skip);
+    window.addEventListener('keydown', skip);
+    this.playGasp();
+    window.setTimeout(() => this.playHeartbeatPulse(), 700);
+    window.setTimeout(() => this.playHeartbeatPulse(), 2500);
+    window.setTimeout(() => this.showWakeCaption(t('menu.wake1'), 2600), 500);
+    window.setTimeout(() => this.showWakeCaption(t('menu.wake2'), 3200), 3700);
+
+    // Seated on the bed, chin dropped, the room swaying with the headache. The
+    // throb eases as the run of beats goes on and they steady enough to read.
+    const seatedY = 1.02;
+    await new Promise<void>((resolve) => {
+      const duration = 8000;
+      const started = performance.now();
+      const step = (): void => {
+        const elapsed = performance.now() - started;
+        const t01 = Math.min(1, elapsed / duration);
+        const throb = Math.sin(elapsed / 240) * 0.04;
+        const swayX = Math.sin(elapsed / 950) * 0.05 * (1 - t01 * 0.4);
+        const y = seatedY + Math.sin(elapsed / 520) * 0.018 + throb * 0.05;
+        // Every other throb darkens the view for a frame, so the head swims.
+        if (this.wakeCaption) this.wakeCaption.style.opacity = Math.sin(elapsed / 240) > 0.985 ? '0.25' : '';
+        this.camera!.position.set(spawn.x + swayX, y, spawn.z);
+        // Down at the chart in the lap, lifting a little as focus returns.
+        const look = new THREE.Vector3(
+          spawn.x + swayX * 0.5,
+          y - (1.05 - t01 * 0.35),
+          spawn.z - 1.6,
+        );
+        this.camera!.lookAt(look);
+        this.camera!.rotation.z += Math.sin(elapsed / 1100) * 0.07 + throb * 0.5;
+        if (t01 < 1 && !this.wakeSkipRequested) requestAnimationFrame(step);
+        else resolve();
+      };
+      requestAnimationFrame(step);
+    });
+
+    window.removeEventListener('pointerdown', skip);
+    window.removeEventListener('keydown', skip);
+    this.stopIntroRendering();
+    if (this.wakeCaption) {
+      this.wakeCaption.classList.remove('show');
+      this.wakeCaption.style.opacity = '';
+    }
+    // Stand the patient by the bed: the chart is raised to eye level next, and
+    // the cutscene takes the camera from here.
+    this.player.reset(map.grid, spawn);
+    this.camera.position.set(spawn.x, EYE_HEIGHT, spawn.z);
+    this.camera.rotation.set(0, 0, 0);
+  }
+
+  /** Shows a wake-scene subtitle line, and puts it away after `holdMs`. */
+  private showWakeCaption(text: string, holdMs: number): void {
+    const el = this.wakeCaption;
+    if (!el) return;
+    // Scheduled lines must never surface after the chart has been opened.
+    if (this.state !== 'loading') return;
+    el.textContent = text;
+    el.classList.add('show');
+    if (this.wakeCaptionTimeout) window.clearTimeout(this.wakeCaptionTimeout);
+    this.wakeCaptionTimeout = window.setTimeout(() => el.classList.remove('show'), holdMs);
+  }
+
   /** Run the full intro cutscene. Resolves when gameplay should start. */
   private async runIntroCutscene(): Promise<void> {
     this.introFinished = false;
@@ -1885,6 +2086,9 @@ export class Game {
   private async startGame(resume = false): Promise<void> {
     this.startScreen?.classList.add('hidden');
     this.pauseMenu?.classList.add('hidden');
+    // The chart is put down: the cutscene and the HUD take the screen from here.
+    document.body.classList.remove('holding-paper');
+    if (this.wakeCaption) this.wakeCaption.classList.remove('show');
 
     // A new run throws the old checkpoint away; a resumed one takes it, and
     // applies it once the intro has finished (see beginPlay).
@@ -1947,6 +2151,14 @@ export class Game {
     // of gameplay would jump the camera forward by several seconds.
     this.clock.getDelta();
     if (resume) this.applyRun(resume);
+
+    // The prologue hides Dr Aris for his corridor pass, and the lift hides him
+    // for the ride. Gameplay owns a visible doctor: without this he is left
+    // invisible on the ward floor and the player never sees him coming.
+    if (this.monster) {
+      if (this.mapInfo) this.monster.reset(this.mapInfo.monsterSpawn);
+      this.monster.setVisible(true);
+    }
 
     if (this.isTouchDevice()) {
       this.showMessage(t('msg.controlsTouch'), 5000);
@@ -2724,6 +2936,7 @@ export class Game {
           // live - after which the handset is worth lifting.
           prop.on = true;
           prop.uses = 0;
+          this.phonesRepaired++;
           this.audio?.playWireSplice();
           this.showMessage(t('msg.phoneRepaired'), 4200);
           return;
@@ -3003,6 +3216,7 @@ export class Game {
     locker.target = 1;
     this.audio?.playLockerDoor(true);
     this.hidingInLocker = locker;
+    this.lockerHides++;
 
     // Frozen inside: movement and look are both off, which is what makes the
     // vents feel like the only window on the room.
@@ -3806,6 +4020,7 @@ export class Game {
   private throwGlass(item: 'bottle' | 'vial'): void {
     if (!this.player || !this.monster || !this.scene) return;
     if (!this.inventory?.take(item)) return;
+    this.glassThrown++;
 
     const thin = item === 'vial';
     const colour = thin ? 0xddf4f8 : 0x9fd8c8;
