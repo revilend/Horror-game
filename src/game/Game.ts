@@ -3197,6 +3197,18 @@ export class Game {
    * like something the player did rather than something that happened.
    */
   private updateInteraction(dt: number): void {
+    // Shut inside a locker the player reaches nothing: no pickup, no breaker,
+    // no boarded door answers through the sheet metal. Dropping the scan here
+    // is what keeps the ACTION press (and E) free for the only interaction
+    // that does work in there - climbing back out. Without this, whatever the
+    // last scan found within REACH of the locker interior swallows every
+    // press, and the player is trapped until something else resets the run.
+    if (this.hidingInLocker) {
+      this.interaction = null;
+      this.interactionTimer = 0.1;
+      return;
+    }
+
     this.interactionTimer -= dt;
     if (this.interactionTimer > 0) return;
     this.interactionTimer = 0.1;
@@ -3254,6 +3266,15 @@ export class Game {
 
   /** Reach out and take, read or use whatever is in front of the player. */
   private interact(): void {
+    // Climbing out outranks everything else while hidden: the ACTION button
+    // and E let the player leave the locker on any press, at any moment -
+    // whether or not the doctor is in the corridor - and no stale target from
+    // the doorway can swallow the press.
+    if (this.hidingInLocker) {
+      this.leaveLocker();
+      return;
+    }
+
     const target = this.interaction;
     if (!target) {
       // Nothing to pick up, so E is free to work the door, drawer or locker

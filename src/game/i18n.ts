@@ -354,9 +354,9 @@ const UI: Record<string, Localized> = {
     ru: 'В ящике было: {item}',
   },
   'msg.lockerIn': {
-    uz: 'Shkafda yashirindingiz — Aris sizni sezmaydi',
-    en: 'Hidden in the locker — Aris cannot see you',
-    ru: 'Вы спрятались в шкафу — Арис вас не видит',
+    uz: 'Shkafda yashirindingiz — chiqish uchun [ACTION] tugmasini bosing',
+    en: 'Hidden in the locker — press [ACTION] to climb out',
+    ru: 'Вы спрятались в шкафу — нажмите [ACTION], чтобы выйти',
   },
   'msg.lockerOut': { uz: 'Shkafdan chiqdingiz', en: 'You climbed back out', ru: 'Вы выбрались из шкафа' },
 
