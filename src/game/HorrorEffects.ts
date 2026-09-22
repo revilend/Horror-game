@@ -60,7 +60,7 @@ export class HorrorEffects {
 
   /** The steady intensity a struck tube settles at. */
   private static readonly ROOM_LIGHT_INTENSITY = 1.8;
-  private fogDensity = 0.035;
+  private fogDensity = 0.08;
   private danger = 0;
   /** 0 = hospital is dead, 1 = emergency power restored */
   private powerOn = false;
@@ -112,10 +112,11 @@ export class HorrorEffects {
     // carries so corridors read as a place, not a black box.
     this.ambientLight = new THREE.AmbientLight(0x3d4a5c, 0.95);
 
-    // Cold, near-black air. Dense enough that a corridor fades out about a
-    // dozen metres ahead, thin enough that the player can always see the wall
-    // they are walking along.
-    scene.fog = new THREE.FogExp2(0x070a11, this.fogDensity);
+    // Cold, near-black air: THREE.FogExp2(0x05070a, 0.08). Dense enough that a
+    // corridor dissolves into pitch black a dozen metres ahead, so the torch
+    // beam - and the headlamp coming down the hall - are the only things that
+    // reach into it.
+    scene.fog = new THREE.FogExp2(0x05070a, this.fogDensity);
     scene.background = createStormSkyTexture();
 
     this.attachToScene();
@@ -534,8 +535,8 @@ export class HorrorEffects {
 
     // --- Fog: darkness, tension and danger all thicken it -----------------
     // Outside, the fog thins out and turns a wet blue-grey so the yard reads.
-    const indoorFog = 0.03 - this.powerLevel * 0.009 + tension * 0.006 + this.danger * 0.014;
-    const outdoorFog = 0.024 + this.danger * 0.016;
+    const indoorFog = 0.05 - this.powerLevel * 0.012 + tension * 0.008 + this.danger * 0.018;
+    const outdoorFog = 0.03 + this.danger * 0.018;
     const targetFog = indoorFog + (outdoorFog - indoorFog) * this.outdoorLevel;
     this.fogDensity += (targetFog - this.fogDensity) * dt * 0.7;
     if (this.scene.fog instanceof THREE.FogExp2) {
@@ -869,7 +870,7 @@ export class HorrorEffects {
   reset(): void {
     this.eventTimer = 0;
     this.nextEventTime = 18;
-    this.fogDensity = 0.035;
+    this.fogDensity = 0.08;
     this.danger = 0;
     this.powerOn = false;
     this.powerLevel = 0;
@@ -882,7 +883,7 @@ export class HorrorEffects {
 
     if (this.scene.fog instanceof THREE.FogExp2) {
       this.scene.fog.density = this.fogDensity;
-      this.scene.fog.color.set(0x0a0f16);
+      this.scene.fog.color.set(0x05070a);
     }
 
     // Drop references to flicker lights that belonged to the discarded scene

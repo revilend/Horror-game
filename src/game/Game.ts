@@ -3764,14 +3764,30 @@ export class Game {
   }
 
   private applyShake(dt: number): void {
-    if (this.shakeTime <= 0 || !this.camera) return;
-    this.shakeTime -= dt;
-    const decay = Math.max(0, this.shakeTime / this.shakeDuration);
-    const strength = this.shakeAmount * decay;
+    if (!this.camera) return;
 
-    this.camera.position.x += (Math.random() - 0.5) * strength;
-    this.camera.position.y += (Math.random() - 0.5) * strength * 0.7;
-    this.camera.rotation.z += (Math.random() - 0.5) * strength * 0.08;
+    if (this.shakeTime > 0) {
+      this.shakeTime -= dt;
+      const decay = Math.max(0, this.shakeTime / this.shakeDuration);
+      const strength = this.shakeAmount * decay;
+
+      this.camera.position.x += (Math.random() - 0.5) * strength;
+      this.camera.position.y += (Math.random() - 0.5) * strength * 0.7;
+      this.camera.rotation.z += (Math.random() - 0.5) * strength * 0.08;
+    }
+
+    // Proximity fear: while he is inside fourteen metres the frame itself
+    // trembles - a continuous low tremor pulsing at the heartbeat rate, on
+    // top of the red vignette the danger meter already drives. Kept independent
+    // of the scripted shakes so a door slam can never mask it.
+    if (this.state === 'playing' && this.danger > 0.3) {
+      const fear = (this.danger - 0.3) / 0.7;
+      const pulse = 0.6 + 0.4 * Math.abs(Math.sin(this.elapsed * (5.5 + this.danger * 5.5)));
+      const tremor = 0.045 * fear * pulse;
+      this.camera.position.x += (Math.random() - 0.5) * tremor;
+      this.camera.position.y += (Math.random() - 0.5) * tremor * 0.7;
+      this.camera.rotation.z += (Math.random() - 0.5) * tremor * 0.06;
+    }
   }
 
   private flashDamage(): void {
@@ -3813,7 +3829,8 @@ export class Game {
     if (!this.monster || !this.player) return;
 
     const distance = this.monster.distanceTo(this.player.position);
-    const proximity = 1 - Math.min(1, Math.max(0, (distance - 2.5) / 13));
+    // The fear radius is fourteen metres: 2.5 (touching) + 11.5 of approach.
+    const proximity = 1 - Math.min(1, Math.max(0, (distance - 2.5) / 11.5));
     const chasing = this.monster.isChasing ? 0.35 : 0;
     const target = Math.min(1, proximity * 0.75 + chasing);
 
