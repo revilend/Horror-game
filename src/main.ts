@@ -68,6 +68,11 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 const game = new Game();
 
+// Dr Aris talks to himself while he stalks the wards: one cheap poll a second
+// decides whether he speaks (see Game.pollArisVoice). It guards on game state
+// itself, so it is harmless in menus, during the intro and while paused.
+window.setInterval(() => game.pollArisVoice(), 1000);
+
 // Start initialization
 game.init().catch((err) => {
   console.error('Game initialization failed:', err);

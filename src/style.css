@@ -362,6 +362,63 @@ body.holding-paper .journal {
     0 34px 74px rgba(0, 0, 0, 0.85),
     0 0 0 1px rgba(255, 240, 200, 0.05),
     inset 0 0 90px rgba(70, 45, 20, 0.35);
+  /* The chart is handed over, not opened: it lifts into the patient's hands. */
+  animation: chart-rise 900ms cubic-bezier(0.22, 0.9, 0.3, 1) both;
+}
+
+@keyframes chart-rise {
+  from {
+    opacity: 0;
+    transform: perspective(1500px) rotateX(28deg) rotateZ(-1.4deg) translateY(10vh) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1500px) rotateX(5deg) rotateZ(-0.4deg) translateY(1.2vh);
+  }
+}
+
+/*
+ * The wake prologue: the patient coming round in Room 404.
+ *
+ * Their eyes have not focused yet, so the picture is cooled and dimmed while
+ * the room swims. It lifts as the prologue ends and the chart comes up.
+ */
+body.waking #game-canvas {
+  /* No blur here: a filter on a full-screen canvas is re-applied every frame,
+     and the wake scene is the worst place to spend a phone's budget. */
+  filter: saturate(0.68) contrast(1.08) brightness(0.66);
+}
+
+body.waking #vignette {
+  opacity: 1;
+}
+
+/*
+ * Getting up off the bed.
+ *
+ * Breaking the seal is the patient standing: the chart slips out of their
+ * hands and falls out of frame, and the cutscene takes the screen from there.
+ * The run's first frame is therefore the room, not a page.
+ */
+body.play-started .journal {
+  animation: chart-drop 620ms cubic-bezier(0.55, 0.05, 0.85, 0.35) both;
+}
+
+body.play-started #start-screen {
+  animation: chart-fade 620ms ease both;
+}
+
+@keyframes chart-drop {
+  to {
+    opacity: 0;
+    transform: perspective(1500px) rotateX(56deg) rotateZ(3.2deg) translateY(52vh) scale(0.9);
+  }
+}
+
+@keyframes chart-fade {
+  to {
+    background: rgba(0, 0, 0, 0.92);
+  }
 }
 
 /* Optional side objectives, under the main chain on the chart. */

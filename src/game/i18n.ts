@@ -160,6 +160,21 @@ const UI: Record<string, Localized> = {
     en: 'Hide in the wardrobes and let him pass — {done}/{total}',
     ru: 'Прячьтесь в шкафах и ждите — {done}/{total}',
   },
+  'side.boards': {
+    uz: "Mixlangan eshiklarning hammasini lom bilan oching — {done}/{total}",
+    en: 'Pry every boarded doorway open — {done}/{total}',
+    ru: 'Вскройте ломом все заколоченные двери — {done}/{total}',
+  },
+  'side.vials': {
+    uz: "Ampulalarni otib, uni boshqa yo'nalishga burang — {done}/{total}",
+    en: 'Throw the ampoules to turn him the wrong way — {done}/{total}',
+    ru: 'Бросайте ампулы, чтобы увести его в сторону — {done}/{total}',
+  },
+  'side.chaseHides': {
+    uz: "Quvishdan shkafga kirib qutuling — {done}/{total}",
+    en: 'Break a chase by stepping into a wardrobe — {done}/{total}',
+    ru: 'Прервите погоню, спрятавшись в шкаф — {done}/{total}',
+  },
   'journal.seal': {
     uz: 'KARAVOTDAN TURISH VA BOSHLASH',
     en: 'RISE FROM THE BED AND BEGIN',
@@ -192,7 +207,17 @@ const UI: Record<string, Localized> = {
     en: 'My head... my head is splitting. Room 404. Why is everything dark?',
     ru: 'Голова... раскалывается. Палата 404. Почему всё темно?',
   },
+  'menu.wake1b': {
+    uz: "Qorong'i... faqat karavot yonidagi chiroq yonib turadi. Kimdir meni bu yerga qo'yib ketgan.",
+    en: 'Dark... only the lamp by the bed is still burning. Someone left me here.',
+    ru: 'Темно... горит только лампа у койки. Кто-то оставил меня здесь.',
+  },
   'menu.wake2': {
+    uz: "Oyoqlarim ko'tarmayapti. Karavotga o'tiraman.",
+    en: 'My legs will not hold me. I am sitting down on the bed.',
+    ru: 'Ноги не держат. Сажусь на койку.',
+  },
+  'menu.wake3': {
     uz: "Qo'limda qog'oz bor — Protokol 7. Avval o'qib chiqaman, keyin karavotdan turaman.",
     en: 'There is a page in my hands — Protocol 7. I will read it, then rise from the bed.',
     ru: 'У меня в руках лист — Протокол 7. Сначала прочту, потом встану с койки.',
@@ -387,6 +412,11 @@ const UI: Record<string, Localized> = {
   'msg.controlsDesktop': { uz: "Narsalarni qo'l bilan oling (E). Shchotga esa saqlagich kerak.", en: 'Everything is picked up by hand (E). The breaker needs a fuse.', ru: 'Предметы берутся вручную (E). Для щитка нужен предохранитель.' },
   'msg.powerOn': { uz: "Elektr yoqildi. Kasalxona ham uyg'ondi.", en: 'The power is on. So is the hospital.', ru: 'Питание включено. Больница тоже проснулась.' },
   'msg.boarded': { uz: 'Eshik mixlangan. Lom kerak.', en: 'The door is boarded shut. You need a crowbar.', ru: 'Дверь заколочена. Нужен лом.' },
+  'msg.boardedHint': {
+    uz: "Mixlar lom bilan chiqadi. Lom pastki qavatlardan birida qolgan.",
+    en: 'The boards come off with a crowbar. One is left on one of the lower decks.',
+    ru: 'Доски снимаются ломом. Один остался на нижних этажах.',
+  },
   'msg.noFuse': { uz: "Shchotda saqlagich yo'q. Ombxonadan toping.", en: 'There is no fuse in the breaker. Look in the store room.', ru: 'В щитке нет предохранителя. Ищите в кладовой.' },
   'msg.keyFound': { uz: 'Kalit {keys}/{total} topildi', en: 'Key {keys}/{total} found', ru: 'Найден ключ {keys}/{total}' },
   'msg.cardFound': { uz: 'Darvoza kartasi topildi', en: 'The gate keycard is yours', ru: 'Найдена карта от ворот' },
@@ -398,6 +428,16 @@ const UI: Record<string, Localized> = {
   },
   'msg.itemUsed': { uz: '{item}: {hint}', en: '{item}: {hint}', ru: '{item}: {hint}' },
   'msg.pried': { uz: 'Mixlar chiqdi — dush xonasi ochildi', en: 'The boards came away — the shower room is open', ru: 'Доски сняты — душевая открыта' },
+  'msg.priedOne': {
+    uz: "Eshik ochildi. Kasalxonada yana {left} ta mixlangan eshik bor.",
+    en: 'The doorway is open. {left} boarded doors left in the building.',
+    ru: 'Проход открыт. В здании осталось заколоченных дверей: {left}.',
+  },
+  'msg.priedLast': {
+    uz: "Oxirgi mixlangan eshik ham ochildi — kasalxonaning hamma yo'li sizga.",
+    en: 'That was the last boarded door — the whole building is open to you.',
+    ru: 'Последняя заколоченная дверь открыта — всё здание перед вами.',
+  },
   'msg.battery': { uz: 'Batareya almashtirildi', en: 'Battery replaced', ru: 'Батарея заменена' },
   'msg.glass': { uz: 'Shisha sinadi — u ovozga qaradi', en: 'The glass shattered — he looked at the noise', ru: 'Стекло разбилось — он пошёл на звук' },
   'msg.glassVial': { uz: 'Ampula chirsillab sinadi — u o\'sha tomonga burildi', en: 'The ampoule cracks open sharp — he turns towards it', ru: 'Ампула звонко лопнула — он повернулся на звук' },
@@ -563,6 +603,80 @@ const UI: Record<string, Localized> = {
   'msg.binEmpty': { uz: 'Faqat zanglagan sim. Olib yurishga arzimaydi.', en: 'Slivers of rusted wire. Nothing worth carrying.', ru: 'Кусочки ржавой проволоки. Нести нечего.' },
   'msg.vialTaken': { uz: 'Ampula qo\'lingizda. Yana {left} ta qoldi.', en: 'A vial comes off the rack. {left} left.', ru: 'Ампула у вас. Осталось {left}.' },
   'msg.vialEmpty': { uz: 'Rak bo\'shadi — faqat rezina qopqoqlar.', en: 'The rack is picked clean - nothing but rubber caps.', ru: 'Штатив пуст — только резиновые колпачки.' },
+  /* ---- Dr Aris talking to himself (voice-over) ---- */
+  // `aris.walk.*` - he is patrolling the wards and has not found the player.
+  'aris.walk.1': {
+    uz: 'Yana bir kecha... yana bir xona. Hammasi bir xil.',
+    en: 'Another night... another room. They are all the same.',
+    ru: 'Ещё одна ночь... ещё одна комната. Всё одинаково.',
+  },
+  'aris.walk.2': {
+    uz: 'Qon quridi. Pichoq esa hali emas.',
+    en: 'The blood has dried. The saw has not.',
+    ru: 'Кровь засохла. Пила — нет.',
+  },
+  'aris.walk.3': {
+    uz: '404... 404... sen hali shu yerdasanmi?',
+    en: '404... 404... are you still here?',
+    ru: '404... 404... ты ещё здесь?',
+  },
+  'aris.walk.4': {
+    uz: 'Meni eshitdingmi? Yaxshi. Demak, yaqinmasan.',
+    en: 'You heard that? Good. Then you are close.',
+    ru: 'Ты слышал? Хорошо. Значит, ты близко.',
+  },
+  'aris.walk.5': {
+    uz: 'Kasalxona hech qachon tinmadi. Hech qachon.',
+    en: 'The hospital never went quiet. Never.',
+    ru: 'Больница никогда не замолкала. Никогда.',
+  },
+  // `aris.wait.*` - close by and hunting, but the player is not spotted yet.
+  'aris.wait.1': {
+    uz: "Qayerga yashirding? Shinam joy emas, bilsang.",
+    en: 'Where did you hide? It is not comfortable in there, you know.',
+    ru: 'Где ты спрятался? Там неудобно, знаешь ли.',
+  },
+  'aris.wait.2': {
+    uz: "Chiq. Men kutishga o'rganganman.",
+    en: 'Come out. I am used to waiting.',
+    ru: 'Выходи. Я привык ждать.',
+  },
+  'aris.wait.3': {
+    uz: 'Nafasingni yutdingmi? Baribir seni eshitdim.',
+    en: 'Did you hold your breath? I heard you anyway.',
+    ru: 'Ты задержал дыхание? И всё равно я тебя услышал.',
+  },
+  'aris.wait.4': {
+    uz: 'Shkaf ham meniki. Shu yerda hammasi meniki.',
+    en: 'The wardrobe is mine too. All of this is mine.',
+    ru: 'И шкаф тоже мой. Всё здесь моё.',
+  },
+  // `aris.caught.*` - the moment the player is caught.
+  'aris.caught.1': {
+    uz: 'Topdim. Yana bir subyekt.',
+    en: 'Found you. One more subject.',
+    ru: 'Нашёл. Ещё один субъект.',
+  },
+  'aris.caught.2': {
+    uz: 'Qochdingmi? Endi bemalol.',
+    en: 'Were you running? Rest now.',
+    ru: 'Бежал? Теперь отдыхай.',
+  },
+  'aris.caught.3': {
+    uz: "Qo'rqma. Bu tez o'tadi. Odatda o'tadi.",
+    en: 'Do not be afraid. It is quick. It is usually quick.',
+    ru: 'Не бойся. Быстро. Обычно быстро.',
+  },
+  'aris.caught.4': {
+    uz: '404... nihoyat.',
+    en: '404... at last.',
+    ru: '404... наконец-то.',
+  },
+  'aris.caught.5': {
+    uz: 'Yana bir imzo. Yana bir qon.',
+    en: 'One more signature. One more drop of blood.',
+    ru: 'Ещё одна подпись. Ещё одна капля крови.',
+  },
   'msg.phoneRepaired': { uz: 'Sim uchqun bilan tutashdi. Liniyada shovqin bor.', en: 'The wire sparks and bites. There is a line humming on the other end.', ru: 'Провод искрит и схватывается. На том конце слышен гул линии.' },
   'msg.phoneDispatch': { uz: 'Uzoqdagi dispetcher: "...yettinchi blok, javob bering... qochish darvozasi..."', en: 'A dispatcher, far off: "...block seven, do you read... the escape gate is..."', ru: 'Далекий диспетчер: «...седьмой блок, ответьте... ворота для выхода...»' },
   'msg.phoneReplay': { uz: 'Liniya o\'sha yozuvni yana aylantirmoqda.', en: 'The line is playing the same recording back.', ru: 'Линия повторяет ту же запись.' },

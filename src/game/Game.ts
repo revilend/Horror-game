@@ -179,6 +179,18 @@ const GAMEPLAY_AMBIENT_FLOOR = 0.85;
 const SIDE_GLASS_GOAL = 6;
 const SIDE_PHONES_GOAL = 2;
 const SIDE_HIDES_GOAL = 3;
+// The things a fuller run is made of: every boarded doorway in the building
+// prised open, every ampoule thrown, and chases broken by stepping into a
+// wardrobe rather than by outrunning him.
+const SIDE_VIALS_GOAL = 4;
+const SIDE_CHASE_HIDES_GOAL = 2;
+
+/**
+ * Where the prologue camera sits once the patient has sunk down onto the bed.
+ * Measured off the ward bed in Room 404: sitting on the mattress, chin down
+ * over the chart that was left on the tray beside it.
+ */
+const WAKE_SEATED_Y = 1.02;
 
 /**
  * The story, told through twenty notes (see notes.ts).
@@ -248,6 +260,16 @@ export class Game {
   private glassThrown = 0;
   private phonesRepaired = 0;
   private lockerHides = 0;
+  /**
+   * The optional objectives the journal counts, kept as running tallies.
+   *
+   * `boardedDoorTotal` is the tally of boarded doorways the run was dealt:
+   * compared against the ones still standing it says how much of the sealed
+   * wing has been opened, without a second list to keep in step.
+   */
+  private boardedDoorTotal = 0;
+  private vialsThrown = 0;
+  private chaseHides = 0;
 
   /** Substation lever thrown: the gate motor has power. */
   private substationOn = false;
@@ -825,6 +847,9 @@ export class Game {
     this.player.onFootstep = (running) => this.audio?.playFootstep(running);
 
     this.collectPickups();
+    // Taken once the world has published its boards: this is the run's own
+    // tally, and the journal measures the prising against it.
+    this.boardedDoorTotal = this.boardedDoors.length;
 
     this.setLoadingProgress(85, t('loading.5'));
     await this.yieldToBrowser();
@@ -846,6 +871,7 @@ export class Game {
     await this.delay(400);
 
     this.setupEvents();
+    this.installRunHooks();
     this.updateBestTimeUI();
     this.updateObjective();
 
@@ -856,7 +882,7 @@ export class Game {
     // viewpoint, a headache, and the room lit only enough to make out where
     // they are. The menu only opens once they have sat up with the file.
     try {
-      await this.playMenuWakeScene();
+      await this.playWakePrologue();
     } catch (error) {
       console.warn('Wake scene failed - showing the chart directly:', error);
     }
@@ -1136,6 +1162,71 @@ export class Game {
    * The yard's lamp posts. Wired up only once the substation is thrown, so the
    * light count in the forward renderer stays low for most of the run.
    */
+  /* ---------------------------------------------------------------------
+   * Dr Aris's voice
+   *
+   * He mutters to himself while he works the wards: a line when he is
+   * patrolling far off, a colder one when he is close but has not found the
+   * player yet, and one last line the instant he catches them. Polled once a
+   * second from main.ts rather than from the render loop - none of it is
+   * per-frame work, and a second of slack on a 35-90 s timer is invisible.
+   *
+   * The lines are read through the same Voice.ts the notes and the intro use,
+   * so the settings switch and the language follow along by themselves.
+   * ------------------------------------------------------------------ */
+
+  /** When the next idle line falls due (ms on `performance.now()`), 0 = off. */
+  private arisNextLineAt = 0;
+  /** The catch line fires once per death, not once per tick. */
+  private arisCaughtLineDone = false;
+
+  /** One line from an `aris.*` group, e.g. `aris.walk.3`. */
+  private pickArisLine(group: 'walk' | 'wait' | 'caught', count: number): string {
+    return t(`aris.${group}.${1 + Math.floor(Math.random() * count)}`);
+  }
+
+  /** Decides, once a second, whether Dr Aris says anything. */
+  pollArisVoice(): void {
+    // Never talk over an open sheet: the journal reads itself aloud.
+    if (this.letterReaderOpen) return;
+
+    if (this.state === 'gameover') {
+      if (!this.arisCaughtLineDone) {
+        this.arisCaughtLineDone = true;
+        this.arisNextLineAt = 0; // the next run arms its own first line
+        speakLine(this.pickArisLine('caught', 5));
+      }
+      return;
+    }
+    // Menus, the intro and the pause menu all stay silent.
+    if (this.state !== 'playing') return;
+    this.arisCaughtLineDone = false;
+
+    const now = performance.now();
+    if (this.arisNextLineAt === 0) {
+      // First line of a run: far enough in that it is atmosphere, not a
+      // greeting the player learns to expect.
+      this.arisNextLineAt = now + 40_000;
+      return;
+    }
+    if (now < this.arisNextLineAt) return;
+
+    const monster = this.monster;
+    const player = this.player;
+    if (!monster || !player) return;
+    if (monster.isChasing) {
+      // Mid-chase the chase music is the voice - and he never stops to talk.
+      this.arisNextLineAt = now + 20_000;
+      return;
+    }
+
+    // Close by but blind to the player: the lines he says while hunting.
+    const close = monster.distanceTo(player.position) < 9;
+    speakLine(close ? this.pickArisLine('wait', 4) : this.pickArisLine('walk', 5));
+    this.arisNextLineAt =
+      now + (close ? 45_000 + Math.random() * 45_000 : 35_000 + Math.random() * 40_000);
+  }
+
   private lightOutdoorLamps(): void {
     if (!this.mapInfo || !this.effects || this.outdoorLights.length > 0) return;
 
@@ -1234,6 +1325,10 @@ export class Game {
     if (!list) return;
 
     const roomsTotal = this.mapInfo?.rooms.length ?? 0;
+    // Boarded doorways are counted as cells pried against the tally the run was
+    // dealt, so the goal closes itself out with the last wing that opens.
+    const boardsTotal = this.boardedDoorTotal;
+    const boardPried = Math.max(0, boardsTotal - this.boardedDoors.length);
     const goals: Array<{ text: string; done: boolean }> = [
       {
         text: t('side.notes', { done: this.notesCollected, total: TOTAL_NOTES }),
@@ -1258,6 +1353,18 @@ export class Game {
       {
         text: t('side.hides', { done: this.lockerHides, total: SIDE_HIDES_GOAL }),
         done: this.lockerHides >= SIDE_HIDES_GOAL,
+      },
+      {
+        text: t('side.boards', { done: boardPried, total: boardsTotal }),
+        done: boardsTotal > 0 && this.boardedDoors.length === 0,
+      },
+      {
+        text: t('side.vials', { done: this.vialsThrown, total: SIDE_VIALS_GOAL }),
+        done: this.vialsThrown >= SIDE_VIALS_GOAL,
+      },
+      {
+        text: t('side.chaseHides', { done: this.chaseHides, total: SIDE_CHASE_HIDES_GOAL }),
+        done: this.chaseHides >= SIDE_CHASE_HIDES_GOAL,
       },
     ];
 
@@ -1285,6 +1392,286 @@ export class Game {
         total: goals.length,
       });
     }
+  }
+
+  /* ---------------------------------------------------------------------
+   * Run hooks
+   *
+   * Wiring that belongs to the run lifecycle rather than to the frame: the
+   * counters the chart's side objectives are read from, the way a boarded
+   * doorway opens, and what a restart re-deals. Kept together here because
+   * every one of them is a hook on another part of the class, not a step of
+   * the loop.
+   * ------------------------------------------------------------------- */
+
+  /**
+   * Installs the run hooks. Called once from `init()`, after the fixtures are
+   * bound and before the prologue, so the very first press of the chart's seal
+   * already goes through them.
+   */
+  private installRunHooks(): void {
+    this.resetSideCounters();
+
+    /* --- Boarded doorways -------------------------------------------------
+     * The boards come off one doorway at a time, and only with the crowbar in
+     * hand. A single blanket pass used to take every plank in the building off
+     * at once, which turned a sealed wing into one switch - and, worse, it
+     * never said what the door wanted, so a doorway the player could not open
+     * read as a bug instead of as a locked door.
+     */
+    const baseInteract = this.interact.bind(this);
+    this.interact = (): void => {
+      // Climbing out of a wardrobe outranks every door in the building, and
+      // the boards are only ever worked from the open floor.
+      if (this.hidingInLocker || this.interaction?.kind !== 'boards') {
+        baseInteract();
+        return;
+      }
+
+      const door = this.nearestBoardedDoor()?.object;
+      if (!door) return;
+
+      if (!(this.inventory?.has('crowbar') ?? false)) {
+        // Where the crowbar is, in the broadest terms: the run deals it onto
+        // one of the lower decks, and a player standing at a sealed doorway in
+        // the dark has no way to work that out on their own.
+        this.showMessage(t('msg.boardedHint'), 3600);
+        return;
+      }
+      this.pryBoardedDoorHere(door);
+    };
+
+    /* --- The counters the side objectives are read from ------------------- */
+    const baseThrowGlass = this.throwGlass.bind(this);
+    this.throwGlass = (item: 'bottle' | 'vial'): void => {
+      if (item === 'vial' && this.inventory?.has('vial')) this.vialsThrown++;
+      baseThrowGlass(item);
+    };
+
+    const baseEnterLocker = this.enterLocker.bind(this);
+    this.enterLocker = (locker: LockerFixture): void => {
+      // Counted on the way in, so a wardrobe that breaks a chase counts even
+      // when he is still in the corridor with the door shutting behind you.
+      if (!this.hidingInLocker && this.monster?.isChasing) this.chaseHides++;
+      baseEnterLocker(locker);
+    };
+
+    /* --- The run lifecycle ------------------------------------------------ */
+    const baseRestart = this.restartGame.bind(this);
+    this.restartGame = (): void => {
+      this.resetSideCounters();
+      document.body.classList.remove('play-started');
+      baseRestart();
+      // The rebuild has just re-dealt the boards: the new run's tally is taken
+      // from what it actually published, never from the run that ended.
+      this.boardedDoorTotal = this.boardedDoors.length;
+    };
+
+    const baseStart = this.startGame.bind(this);
+    this.startGame = async (resume = false): Promise<void> => {
+      // Breaking the seal is the act of getting up off the bed, so it gets its
+      // own beat: the chart drops out of the patient's hands (see style.css),
+      // and only once it is out of frame does the prologue's cutscene take the
+      // screen. A resumed or restarted run skips straight through.
+      if (resume || this.state !== 'menu') {
+        baseStart(resume);
+        return;
+      }
+
+      document.body.classList.add('play-started');
+      await new Promise((resolve) => window.setTimeout(resolve, 620));
+      document.body.classList.remove('play-started');
+      await baseStart(resume);
+    };
+  }
+
+  /** Clears the optional-objective tallies for a fresh run. */
+  private resetSideCounters(): void {
+    this.boardedDoorTotal = 0;
+    this.vialsThrown = 0;
+    this.chaseHides = 0;
+  }
+
+  /**
+   * Takes the boards off the doorway the player is standing at.
+   *
+   * The grid cell is read back out of the mesh position - the same way the
+   * board-up was published - and reopened, which is what lets both the player
+   * and Dr Aris through it again. One doorway per press, with what is left of
+   * the wing said out loud, so opening it is something the run does step by
+   * step rather than in one sweep.
+   */
+  private pryBoardedDoorHere(door: THREE.Object3D): void {
+    const map = this.mapInfo;
+    if (!map || !this.boardedDoors.includes(door)) return;
+
+    const row = Math.round(door.position.z / CELL);
+    const col = Math.round(door.position.x / CELL);
+    if (map.grid[row]?.[col] === 0) map.grid[row][col] = 1;
+    door.parent?.remove(door);
+    this.boardedDoors = this.boardedDoors.filter((other) => other !== door);
+
+    this.audio?.playDoorUnlock();
+    this.addShake(0.18, 0.5);
+
+    if (this.boardedDoors.length === 0) {
+      this.showMessage(t('msg.priedLast'), 4200);
+    } else {
+      this.showMessage(t('msg.priedOne', { left: this.boardedDoors.length }), 3000);
+    }
+
+    this.marksDirty = true;
+    this.updateObjective();
+    this.renderJournalSide();
+  }
+
+  /**
+   * The prologue before the chart: Patient 404 coming round in Room 404.
+   *
+   * Three beats, in the order a concussed body would find them:
+   *
+   *   1. On their feet, swaying, the room swimming, the ward lamp the only
+   *      light there is. The head turns slowly across the room and back.
+   *   2. Sinking down onto the bed: the view drops from standing eye height to
+   *      a seat on the mattress, and the gaze with it.
+   *   3. The chart that was left on the tray lifted into both hands.
+   *
+   * Only then does the seal at the foot of the page appear - the player reads
+   * it, works the settings tab if they want to, and rises from the bed to
+   * begin. Any input skips the whole prologue straight to the chart, so nobody
+   * is ever locked out of the menu by a cutscene.
+   */
+  private async playWakePrologue(): Promise<void> {
+    const map = this.mapInfo;
+    if (!map || !this.camera || !this.player) return;
+
+    const spawn = map.playerSpawn;
+    this.player.inputDisabled = true;
+    this.player.reset(map.grid, spawn);
+
+    // Just enough light to make out where they are: a dying ward lamp, and the
+    // torch fallen across the patient's knees.
+    this.effects?.setAmbientFloor(GAMEPLAY_AMBIENT_FLOOR * 0.55);
+    this.flashlightOn = true;
+    this.flashlightBattery = Math.max(this.flashlightBattery, 45);
+    if (this.flashlight) {
+      this.flashlight.visible = true;
+      this.flashlight.intensity = 2.4;
+    }
+
+    // The in-engine frames come from the intro's own render loop: the gameplay
+    // loop bails out while the game state is still 'loading'.
+    this.startIntroRendering();
+    this.wakeSkipRequested = false;
+    document.body.classList.add('waking');
+    const skip = (): void => {
+      this.wakeSkipRequested = true;
+    };
+    window.addEventListener('pointerdown', skip);
+    window.addEventListener('keydown', skip);
+
+    this.playGasp();
+    window.setTimeout(() => this.playHeartbeatPulse(), 900);
+    window.setTimeout(() => this.playHeartbeatPulse(), 3200);
+
+    try {
+      // ── BEAT 1 · on their feet in 404 ──────────────────────────────────
+      this.showWakeCaption(t('menu.wake1'), 2800);
+      window.setTimeout(() => this.showWakeCaption(t('menu.wake1b'), 3000), 3200);
+      await this.wakeBeat(6200, (progress, elapsed) => {
+        const throb = Math.sin(elapsed / 235) * 0.05;
+        const sway = Math.sin(elapsed / 1250) * 0.1 * (1 - progress * 0.35);
+        const y = EYE_HEIGHT - 0.05 * progress + Math.sin(elapsed / 605) * 0.025 + throb * 0.05;
+        this.camera!.position.set(spawn.x + sway, y, spawn.z);
+        // The head turns across the ward and back, slowly, the way somebody
+        // works out where they are without trusting their balance.
+        const yaw = Math.sin(elapsed / 1750) * 0.6 * (1 - progress * 0.45);
+        this.wakeLook(spawn, yaw, y - 0.3 + throb * 0.45, 3.4);
+        this.camera!.rotation.z += Math.sin(elapsed / 880) * 0.1 + throb * 0.7;
+      });
+
+      // ── BEAT 2 · down onto the bed ─────────────────────────────────────
+      this.showWakeCaption(t('menu.wake2'), 3200);
+      this.playHeartbeatPulse();
+      await this.wakeBeat(2800, (progress, elapsed) => {
+        const ease = progress * progress * (3 - 2 * progress);
+        const y =
+          EYE_HEIGHT - (EYE_HEIGHT - WAKE_SEATED_Y) * ease + Math.sin(elapsed / 470) * 0.02;
+        const sway = Math.sin(elapsed / 1100) * 0.06 * (1 - ease);
+        this.camera!.position.set(spawn.x + sway, y, spawn.z);
+        // The gaze falls with the body: from across the room to the tray.
+        this.wakeLook(spawn, sway * 0.25, y - (0.5 + 1.05 * ease), 2.0);
+        this.camera!.rotation.z +=
+          Math.sin(elapsed / 1000) * 0.06 * (1 - ease) + (1 - ease) * 0.05;
+      });
+
+      // ── BEAT 3 · the chart in both hands ───────────────────────────────
+      this.showWakeCaption(t('menu.wake3'), 3400);
+      await this.wakeBeat(2500, (progress, elapsed) => {
+        const ease = progress * progress * (3 - 2 * progress);
+        const y =
+          WAKE_SEATED_Y +
+          Math.sin(elapsed / 520) * 0.018 +
+          Math.sin(elapsed / 235) * 0.02 * (1 - ease);
+        const sway = Math.sin(elapsed / 950) * 0.04 * (1 - ease * 0.5);
+        this.camera!.position.set(spawn.x + sway, y, spawn.z);
+        this.wakeLook(spawn, sway * 0.3, y - (1.5 - ease * 0.35), 1.7);
+        this.camera!.rotation.z += Math.sin(elapsed / 1100) * 0.06 * (1 - ease);
+      });
+    } finally {
+      window.removeEventListener('pointerdown', skip);
+      window.removeEventListener('keydown', skip);
+      this.stopIntroRendering();
+      if (this.wakeCaption) {
+        this.wakeCaption.classList.remove('show');
+        this.wakeCaption.style.opacity = '';
+      }
+      // Seated with the file, which is the pose the chart is handed over in.
+      this.player.reset(map.grid, spawn);
+      this.camera.position.set(spawn.x, WAKE_SEATED_Y, spawn.z);
+      this.camera.rotation.set(0, 0, 0);
+      document.body.classList.add('holding-paper');
+      document.body.classList.remove('waking');
+    }
+  }
+
+  /**
+   * One beat of the wake prologue.
+   *
+   * `draw` is handed the beat's progress and the milliseconds since it began;
+   * the promise resolves when the beat has run its course or the player has
+   * asked to skip. Every beat reads the same flag, so one tap can never leave
+   * another of them still steering the camera behind the open chart.
+   */
+  private wakeBeat(ms: number, draw: (progress: number, elapsed: number) => void): Promise<void> {
+    return new Promise((resolve) => {
+      const started = performance.now();
+      const step = (): void => {
+        const elapsed = performance.now() - started;
+        const progress = Math.min(1, elapsed / ms);
+        draw(progress, elapsed);
+        if (progress < 1 && !this.wakeSkipRequested) requestAnimationFrame(step);
+        else resolve();
+      };
+      requestAnimationFrame(step);
+    });
+  }
+
+  /**
+   * Aims the prologue camera `reach` metres ahead of `origin`, turned by `yaw`,
+   * at height `height`. Kept apart from the beats so all three of them share
+   * one idea of where "forward" is.
+   */
+  private wakeLook(origin: THREE.Vector3, yaw: number, height: number, reach: number): void {
+    const camera = this.camera;
+    if (!camera) return;
+    camera.lookAt(
+      new THREE.Vector3(
+        origin.x + Math.sin(yaw) * reach,
+        height,
+        origin.z - Math.cos(yaw) * reach,
+      ),
+    );
   }
 
   private setupEvents(): void {

@@ -89,6 +89,8 @@ export class Monster {
   onSawRev: (() => void) | null = null;
 
   private grid: number[][];
+  /** The scene the rig was handed to, so it can always be put back into it. */
+  private scene: THREE.Scene | null = null;
   private position: THREE.Vector3;
   private path: GridPoint[] = [];
   private pathIndex = 0;
@@ -572,17 +574,58 @@ export class Monster {
       doctorGlbUrl,
       (gltf) => {
         const model = gltf.scene;
-        const box = new THREE.Box3().setFromObject(model);
-        const height = Math.max(0.01, box.max.y - box.min.y);
-        const scale = DOCTOR_HEIGHT / height;
 
+        // Everything about the model is checked here, before a single piece of
+        // the procedural rig is switched off. A GLB that arrives without
+        // drawable geometry - or with bounds that do not survive the trip -
+        // must leave the old doctor standing rather than an empty ward, and
+        // the only safe way to promise that is to measure first and swap
+        // second.
+        let meshCount = 0;
+        model.updateMatrixWorld(true);
         model.traverse((child) => {
           const mesh = child as THREE.Mesh;
-          if (mesh.isMesh) {
-            mesh.castShadow = true;
-            mesh.receiveShadow = false;
+          if (!mesh.isMesh) return;
+          meshCount++;
+          mesh.castShadow = true;
+          mesh.receiveShadow = false;
+          // three.js decides whether to draw a mesh from its bounding sphere,
+          // and a stale or missing one culls it on every single frame - which
+          // is exactly what "the doctor is invisible" looks like from inside
+          // the game. He is one small object, so the culling he costs is worth
+          // nothing next to that risk.
+          mesh.geometry?.computeBoundingSphere();
+          mesh.frustumCulled = false;
+
+          const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          for (const material of materials) {
+            if (!(material instanceof THREE.MeshStandardMaterial)) continue;
+            // A metallic surface with no environment map reflects nothing at
+            // all, so it renders as a black hole the moment the ward lights go
+            // out: the saw and the syringe head would vanish into the dark.
+            material.metalness = Math.min(material.metalness, 0.35);
+            // What is left is a coat, skin and hair that only ever catch the
+            // torch. A whisper of each material's own colour, made emissive, is
+            // the same trick the hand-built rig used to hold an outline in a
+            // black corridor: enough to read him coming, not enough to light
+            // him. Materials that already glow (his red eyes) are left alone.
+            if (material.emissive.getHex() === 0x000000) {
+              material.emissive.copy(material.color).multiplyScalar(0.18);
+            }
+            material.needsUpdate = true;
           }
         });
+
+        const box = new THREE.Box3().setFromObject(model);
+        const height = box.max.y - box.min.y;
+        if (meshCount === 0 || !Number.isFinite(height) || height < 0.5 || height > 8) {
+          console.warn('doktor.glb is unusable - keeping the procedural doctor', {
+            meshCount,
+            height,
+          });
+          return;
+        }
+        const scale = DOCTOR_HEIGHT / height;
 
         const head = model.getObjectByName('Head') ?? null;
         if (head) {
@@ -611,6 +654,8 @@ export class Monster {
         this.glbHead = head;
         this.usingGlb = true;
 
+        // Only now, with the shipped model measured, pinned to the floor and
+        // parented into the rig, is the hand-built doctor put away.
         for (const group of [
           this.legsGroup,
           this.torso,
@@ -620,6 +665,10 @@ export class Monster {
         ]) {
           group.visible = false;
         }
+
+        console.info(
+          `doktor.glb in use: ${meshCount} meshes, scaled x${scale.toFixed(3)} to ${DOCTOR_HEIGHT} m`,
+        );
       },
       undefined,
       (error) => {
@@ -661,12 +710,31 @@ export class Monster {
   }
 
   addToScene(scene: THREE.Scene): void {
-    scene.add(this.mesh);
+    // Idempotent on purpose: the rig is added at boot and again after a
+    // restart clears the scene, and a double add must never be possible.
+    this.scene = scene;
+    this.ensureAttached();
   }
 
   /** Show or hide the doctor (used during cutscene transitions). */
   setVisible(visible: boolean): void {
+    this.ensureAttached();
     this.mesh.visible = visible;
+  }
+
+  /**
+   * Puts the rig back under the scene it was added to, if something has since
+   * detached it.
+   *
+   * Rebuilding the level empties the scene, and the doctor hangs off his own
+   * group rather than off the level, so nothing in the rebuild puts him back:
+   * a single wipe used to leave him walking the wards as an orphan no camera
+   * can see. The check is one property read, and it is made at every point
+   * where the run hands him back to the world, so no future rebuild can hide
+   * him either.
+   */
+  private ensureAttached(): void {
+    if (this.scene && this.mesh.parent !== this.scene) this.scene.add(this.mesh);
   }
 
   setColliders(colliders: Array<{ x: number; z: number; r: number }>): void {
@@ -806,6 +874,9 @@ export class Monster {
    */
   update(dt: number, playerPos: THREE.Vector3, playerNoisy: boolean, isHidden: boolean = false): { caught: boolean } {
     this.growlCooldown = Math.max(0, this.growlCooldown - dt);
+    // Last line of defence against ever being an invisible threat again: a
+    // doctor nobody can see is worse than no doctor at all.
+    this.ensureAttached();
 
     const distance = Math.hypot(playerPos.x - this.position.x, playerPos.z - this.position.z);
 
@@ -1007,6 +1078,7 @@ export class Monster {
   }
 
   reset(spawn: THREE.Vector3): void {
+    this.ensureAttached();
     this.position.copy(spawn);
     this.position.y = this.groundHeight;
     this.mesh.position.copy(this.position);
