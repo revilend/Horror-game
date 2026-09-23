@@ -217,6 +217,11 @@ const UI: Record<string, Localized> = {
     en: 'My legs will not hold me. I am sitting down on the bed.',
     ru: 'Ноги не держат. Сажусь на койку.',
   },
+  'menu.rise': {
+    uz: "Qog'oz qo'limdan tushdi. Karavotdan turaman — oyoqlarim hali ham titrayapti.",
+    en: 'The page slips out of my hands. I am up off the bed — and my legs are still shaking.',
+    ru: 'Лист выскальзывает из рук. Встаю с койки — ноги всё ещё дрожат.',
+  },
   'menu.wake3': {
     uz: "Qo'limda qog'oz bor — Protokol 7. Avval o'qib chiqaman, keyin karavotdan turaman.",
     en: 'There is a page in my hands — Protocol 7. I will read it, then rise from the bed.',

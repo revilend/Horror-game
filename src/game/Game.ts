@@ -1479,10 +1479,30 @@ export class Game {
       }
 
       document.body.classList.add('play-started');
+      this.showRiseCaption(t('menu.rise'));
       await new Promise((resolve) => window.setTimeout(resolve, 620));
       document.body.classList.remove('play-started');
       await baseStart(resume);
     };
+  }
+
+  /**
+   * The line the patient says as they get up off the bed.
+   *
+   * It writes to the caption element directly rather than going through
+   * `showWakeCaption`, which is deliberately silent once the chart is open:
+   * this is the one caption that belongs to the beat *after* the chart, and
+   * the two must not be able to cancel each other out.
+   */
+  private showRiseCaption(text: string): void {
+    const el = this.wakeCaption;
+    if (!el) return;
+    el.textContent = text;
+    el.classList.add('show');
+    el.style.opacity = '';
+    speakLine(text);
+    if (this.wakeCaptionTimeout) window.clearTimeout(this.wakeCaptionTimeout);
+    this.wakeCaptionTimeout = window.setTimeout(() => el.classList.remove('show'), 3200);
   }
 
   /** Clears the optional-objective tallies for a fresh run. */
